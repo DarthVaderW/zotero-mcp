@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -11,8 +13,11 @@ from mcp.server.fastmcp import FastMCP
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts" / "zotero.py"
+MCP_HOST = os.getenv("ZOTERO_MCP_HOST", "127.0.0.1")
+MCP_PORT = int(os.getenv("ZOTERO_MCP_PORT", "6817"))
+MCP_PATH = os.getenv("ZOTERO_MCP_PATH", "/mcp")
 
-mcp = FastMCP("zotero-mcp")
+mcp = FastMCP("zotero-mcp", host=MCP_HOST, port=MCP_PORT, streamable_http_path=MCP_PATH)
 
 
 def run_zotero(args: list[str], expect_json: bool = True) -> dict[str, Any]:
@@ -104,7 +109,22 @@ def zotero_fetch_pdf(
 
 
 def main() -> None:
-    mcp.run()
+    parser = argparse.ArgumentParser(description="Run the Zotero MCP server.")
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "streamable-http"],
+        default=os.getenv("ZOTERO_MCP_TRANSPORT", "stdio"),
+        help="MCP transport. Use streamable-http for Codex UI URL mode.",
+    )
+    parser.add_argument("--host", default=MCP_HOST, help="HTTP host for streamable-http.")
+    parser.add_argument("--port", type=int, default=MCP_PORT, help="HTTP port for streamable-http.")
+    parser.add_argument("--path", default=MCP_PATH, help="HTTP MCP path for streamable-http.")
+    args = parser.parse_args()
+
+    mcp.settings.host = args.host
+    mcp.settings.port = args.port
+    mcp.settings.streamable_http_path = args.path
+    mcp.run(transport=args.transport)
 
 
 if __name__ == "__main__":

@@ -32,10 +32,24 @@ Do not commit `.env`, PDFs, or local Zotero data.
 
 ## Codex MCP Config
 
+Developer stdio mode:
+
 ```toml
 [mcp_servers.zotero]
 command = "/bin/bash"
 args = ["/Users/<you>/projects/zotero-mcp/scripts/run_zotero_mcp.sh"]
+```
+
+Local HTTP runtime mode:
+
+```bash
+scripts/run_zotero_mcp_http.sh
+```
+
+Then add this URL in Codex MCP UI:
+
+```text
+http://127.0.0.1:6817/mcp
 ```
 
 ## Verify
@@ -43,6 +57,7 @@ args = ["/Users/<you>/projects/zotero-mcp/scripts/run_zotero_mcp.sh"]
 ```bash
 python3 tests/test_zotero_cli.py
 uv run python tests/smoke_test_mcp.py --expect-tool zotero_ping
+uv run python tests/smoke_test_http_mcp.py --expect-tool zotero_ping
 python3 scripts/zotero.py ping
 ```
 
