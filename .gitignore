@@ -1,0 +1,14 @@
+__pycache__/
+.pycache/
+*.py[cod]
+.DS_Store
+.venv/
+.venv*/
+.uv-cache/
+.tmp/
+*.egg-info/
+.env
+.env.*
+!.env.example
+scripts/zotero_orignal.py
+pdfs/
