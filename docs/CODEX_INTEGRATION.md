@@ -4,19 +4,24 @@ This repository contains a Zotero CLI and a thin Zotero MCP server.
 
 ## Token Configuration
 
-For end users, configure these values in the Codex MCP UI. `.env` remains a
-developer fallback only.
+For end users, run the local HTTP runtime and configure these values in the
+Codex MCP UI as request headers. `.env` remains a developer fallback only.
 
 ```text
-ZOTERO_DEBUG_BRIDGE_TOKEN=<local Zotero Debug Bridge token>
+URL: http://127.0.0.1:6817/mcp
+Authorization: Bearer <local Zotero Debug Bridge token>
 ```
 
-Optional Web API fields:
+You can use `X-Zotero-Debug-Bridge-Token: <token>` instead of the Authorization
+header. Optional fields:
 
 ```text
-ZOTERO_API_KEY=<Zotero Web API key>
-ZOTERO_USER_ID=<Zotero user id>
-ZOTERO_GROUP_ID=<Zotero group id>
+X-Zotero-Debug-Bridge-Url: http://127.0.0.1:23119/debug-bridge/execute
+X-Zotero-Library-Id: 1
+X-Zotero-API-Key: <Zotero Web API key>
+X-Zotero-User-Id: <Zotero user id>
+X-Zotero-Group-Id: <Zotero group id>
+X-Crossref-Email: <email for CrossRef/Unpaywall>
 ```
 
 ## Codex Config Boundary
@@ -31,7 +36,9 @@ command = "/bin/bash"
 args = ["/Users/<you>/projects/zotero-mcp/scripts/run_zotero_mcp.sh"]
 ```
 
-Use Codex MCP settings for user-managed token/env fields when available.
+Use Codex MCP settings for user-managed token/header fields when available.
+Developer command-mode installs can use shell environment variables or an
+untracked `.env`.
 
 ## Checks
 
@@ -39,6 +46,7 @@ No-secret tests:
 
 ```bash
 python3 tests/test_zotero_cli.py
+uv run python tests/test_header_config.py
 ```
 
 Local Debug Bridge:
