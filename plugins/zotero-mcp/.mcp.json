@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "zotero": {
+      "command": "uvx",
+      "args": [
+        "--refresh",
+        "--from",
+        "git+ssh://git@github.com/DarthVaderW/zotero-mcp.git@stable",
+        "zotero-mcp"
+      ],
+      "env_vars": [
+        "ZOTERO_DEBUG_BRIDGE_TOKEN",
+        "ZOTERO_DEBUG_BRIDGE_URL",
+        "ZOTERO_LIBRARY_ID",
+        "ZOTERO_API_KEY",
+        "ZOTERO_USER_ID",
+        "ZOTERO_GROUP_ID",
+        "CROSSREF_EMAIL"
+      ]
+    }
+  }
+}

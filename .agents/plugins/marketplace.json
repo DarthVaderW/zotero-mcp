@@ -1,0 +1,20 @@
+{
+  "name": "zotero-mcp",
+  "interface": {
+    "displayName": "Zotero MCP"
+  },
+  "plugins": [
+    {
+      "name": "zotero-mcp",
+      "source": {
+        "source": "local",
+        "path": "./plugins/zotero-mcp"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
