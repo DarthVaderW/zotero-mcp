@@ -3,9 +3,8 @@
     "zotero": {
       "command": "uvx",
       "args": [
-        "--refresh",
         "--from",
-        "git+https://github.com/DarthVaderW/zotero-mcp.git@stable",
+        "git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.3",
         "zotero-mcp"
       ],
       "env_vars": [

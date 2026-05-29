@@ -25,7 +25,9 @@ ZOTERO_GROUP_ID=<optional Zotero group id>
 CROSSREF_EMAIL=<email for CrossRef/Unpaywall>
 ```
 
-The plugin starts the stdio MCP with `uvx`; no local HTTP service is required.
+The plugin starts the stdio MCP with `uvx` from a fixed release tag; no local
+HTTP service is required, and normal MCP startup does not auto-refresh from
+GitHub.
 
 ## Claude Code Plugin Install
 
