@@ -1,0 +1,22 @@
+{
+  "mcpServers": {
+    "zotero": {
+      "command": "uvx",
+      "args": [
+        "--refresh",
+        "--from",
+        "git+https://github.com/DarthVaderW/zotero-mcp.git@stable",
+        "zotero-mcp"
+      ],
+      "env": {
+        "ZOTERO_DEBUG_BRIDGE_TOKEN": "${user_config.zotero_debug_bridge_token}",
+        "ZOTERO_DEBUG_BRIDGE_URL": "${user_config.zotero_debug_bridge_url}",
+        "ZOTERO_LIBRARY_ID": "${user_config.zotero_library_id}",
+        "ZOTERO_API_KEY": "${user_config.zotero_api_key}",
+        "ZOTERO_USER_ID": "${user_config.zotero_user_id}",
+        "ZOTERO_GROUP_ID": "${user_config.zotero_group_id}",
+        "CROSSREF_EMAIL": "${user_config.crossref_email}"
+      }
+    }
+  }
+}

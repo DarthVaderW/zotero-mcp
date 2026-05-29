@@ -1,0 +1,24 @@
+{
+  "name": "darthvaderw-zotero-mcp",
+  "owner": {
+    "name": "Haotian Wang"
+  },
+  "description": "Zotero MCP plugin marketplace.",
+  "plugins": [
+    {
+      "name": "zotero-mcp",
+      "source": "./plugins/zotero-mcp",
+      "displayName": "Zotero MCP",
+      "description": "Connect Claude Code to local Zotero tools.",
+      "version": "0.1.2",
+      "author": {
+        "name": "Haotian Wang"
+      },
+      "homepage": "https://github.com/DarthVaderW/zotero-mcp",
+      "repository": "https://github.com/DarthVaderW/zotero-mcp",
+      "license": "MIT",
+      "category": "productivity",
+      "tags": ["zotero", "mcp", "papers"]
+    }
+  ]
+}

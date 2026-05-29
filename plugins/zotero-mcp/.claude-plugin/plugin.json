@@ -1,0 +1,60 @@
+{
+  "name": "zotero-mcp",
+  "displayName": "Zotero MCP",
+  "version": "0.1.2",
+  "description": "Connect Claude Code to local Zotero tools.",
+  "author": {
+    "name": "Haotian Wang",
+    "url": "https://github.com/DarthVaderW"
+  },
+  "homepage": "https://github.com/DarthVaderW/zotero-mcp",
+  "repository": "https://github.com/DarthVaderW/zotero-mcp",
+  "license": "MIT",
+  "keywords": ["zotero", "mcp", "papers"],
+  "mcpServers": "./claude.mcp.json",
+  "userConfig": {
+    "zotero_debug_bridge_token": {
+      "type": "string",
+      "title": "Zotero Debug Bridge token",
+      "description": "Local token from your Zotero Debug Bridge plugin.",
+      "sensitive": true,
+      "required": true
+    },
+    "zotero_debug_bridge_url": {
+      "type": "string",
+      "title": "Zotero Debug Bridge URL",
+      "description": "Local Zotero Debug Bridge endpoint.",
+      "default": "http://127.0.0.1:23119/debug-bridge/execute",
+      "required": true
+    },
+    "zotero_library_id": {
+      "type": "string",
+      "title": "Zotero library ID",
+      "description": "Local Zotero library id. Use 1 for the default personal library.",
+      "default": "1",
+      "required": true
+    },
+    "zotero_api_key": {
+      "type": "string",
+      "title": "Zotero Web API key",
+      "description": "Optional Zotero Web API key for remote/cloud workflows.",
+      "sensitive": true
+    },
+    "zotero_user_id": {
+      "type": "string",
+      "title": "Zotero user ID",
+      "description": "Optional Zotero user id for Web API workflows."
+    },
+    "zotero_group_id": {
+      "type": "string",
+      "title": "Zotero group ID",
+      "description": "Optional Zotero group id for Web API workflows."
+    },
+    "crossref_email": {
+      "type": "string",
+      "title": "Crossref email",
+      "description": "Email used for CrossRef and Unpaywall requests.",
+      "default": "zotero-cli@example.com"
+    }
+  }
+}

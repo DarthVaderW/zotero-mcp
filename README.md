@@ -9,34 +9,53 @@ Zotero MCP runtime and helper CLI for the research system.
 
 Cross-system paper-library rules live in `research-paper-skill`, not here.
 
+## Install
+
+This repository ships the same stdio MCP server for Codex and Claude Code. The
+MCP implementation is shared; only the plugin shell differs by client.
+
+Codex:
+
+```bash
+codex plugin marketplace add DarthVaderW/zotero-mcp --ref stable \
+  --sparse .agents/plugins \
+  --sparse plugins/zotero-mcp
+codex plugin add zotero-mcp@zotero-mcp
+```
+
+Claude Code:
+
+```text
+/plugin marketplace add DarthVaderW/zotero-mcp
+/plugin install zotero-mcp@darthvaderw-zotero-mcp
+```
+
 ## Configure
 
-For end users, run the local HTTP runtime and configure credentials in the Codex
-MCP UI as request headers. `.env` remains a developer fallback only.
-
-Required header for local Zotero:
+Required local values:
 
 ```text
-Authorization: Bearer <local Zotero Debug Bridge token>
+ZOTERO_DEBUG_BRIDGE_TOKEN=<local Zotero Debug Bridge token>
+ZOTERO_DEBUG_BRIDGE_URL=http://127.0.0.1:23119/debug-bridge/execute
+ZOTERO_LIBRARY_ID=1
 ```
 
-Optional headers:
+Optional Web API values:
 
 ```text
-X-Zotero-Debug-Bridge-Token: <local Zotero Debug Bridge token>
-X-Zotero-Debug-Bridge-Url: http://127.0.0.1:23119/debug-bridge/execute
-X-Zotero-Library-Id: 1
-X-Zotero-API-Key: <Zotero Web API key>
-X-Zotero-User-Id: <Zotero user id>
-X-Zotero-Group-Id: <Zotero group id>
-X-Crossref-Email: <email for CrossRef/Unpaywall>
+ZOTERO_API_KEY=<Zotero Web API key>
+ZOTERO_USER_ID=<Zotero user id>
+ZOTERO_GROUP_ID=<Zotero group id>
+CROSSREF_EMAIL=<email for CrossRef/Unpaywall>
 ```
 
-Do not commit `.env`, PDFs, or local Zotero data.
+Codex users enter these in the Codex MCP configuration UI. Claude Code users
+enter them through the plugin's `userConfig` prompt. Do not commit `.env`,
+PDFs, or local Zotero data.
 
-## Codex MCP Config
+## Developer Command Mode
 
-Developer stdio mode:
+For source development, point Codex or Claude Code at the local checkout:
 
 ```toml
 [mcp_servers.zotero]
@@ -44,30 +63,12 @@ command = "/bin/bash"
 args = ["/Users/<you>/projects/zotero-mcp/scripts/run_zotero_mcp.sh"]
 ```
 
-Local HTTP runtime mode:
-
-```bash
-scripts/run_zotero_mcp_http.sh
-```
-
-Then add this URL in Codex MCP UI:
-
-```text
-http://127.0.0.1:6817/mcp
-```
-
-Add `Authorization: Bearer <local Zotero Debug Bridge token>` or
-`X-Zotero-Debug-Bridge-Token: <local Zotero Debug Bridge token>` in Codex UI.
-Developer command-mode installs may still use local environment variables or an
-untracked `.env`.
-
 ## Verify
 
 ```bash
 python3 tests/test_zotero_cli.py
 uv run python tests/test_header_config.py
 uv run python tests/smoke_test_mcp.py --expect-tool zotero_ping
-uv run python tests/smoke_test_http_mcp.py --expect-tool zotero_ping
 python3 scripts/zotero.py ping
 ```
 

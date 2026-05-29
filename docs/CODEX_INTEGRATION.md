@@ -1,34 +1,47 @@
-# Codex Integration
+# Codex And Claude Code Integration
 
 This repository contains a Zotero CLI and a thin Zotero MCP server.
 
-## Token Configuration
+## Codex Plugin Install
 
-For end users, run the local HTTP runtime and configure these values in the
-Codex MCP UI as request headers. `.env` remains a developer fallback only.
+Install the public marketplace and plugin:
 
-```text
-URL: http://127.0.0.1:6817/mcp
-Authorization: Bearer <local Zotero Debug Bridge token>
+```bash
+codex plugin marketplace add DarthVaderW/zotero-mcp --ref stable \
+  --sparse .agents/plugins \
+  --sparse plugins/zotero-mcp
+codex plugin add zotero-mcp@zotero-mcp
 ```
 
-You can use `X-Zotero-Debug-Bridge-Token: <token>` instead of the Authorization
-header. Optional fields:
+Then configure these values in Codex Settings -> MCP:
 
 ```text
-X-Zotero-Debug-Bridge-Url: http://127.0.0.1:23119/debug-bridge/execute
-X-Zotero-Library-Id: 1
-X-Zotero-API-Key: <Zotero Web API key>
-X-Zotero-User-Id: <Zotero user id>
-X-Zotero-Group-Id: <Zotero group id>
-X-Crossref-Email: <email for CrossRef/Unpaywall>
+ZOTERO_DEBUG_BRIDGE_TOKEN=<local Zotero Debug Bridge token>
+ZOTERO_DEBUG_BRIDGE_URL=http://127.0.0.1:23119/debug-bridge/execute
+ZOTERO_LIBRARY_ID=1
+ZOTERO_API_KEY=<optional Zotero Web API key>
+ZOTERO_USER_ID=<optional Zotero user id>
+ZOTERO_GROUP_ID=<optional Zotero group id>
+CROSSREF_EMAIL=<email for CrossRef/Unpaywall>
 ```
 
-## Codex Config Boundary
+The plugin starts the stdio MCP with `uvx`; no local HTTP service is required.
 
-Do not put Zotero tokens in `~/.codex/config.toml`.
+## Claude Code Plugin Install
 
-Codex config should contain only the wrapper path:
+Inside Claude Code:
+
+```text
+/plugin marketplace add DarthVaderW/zotero-mcp
+/plugin install zotero-mcp@darthvaderw-zotero-mcp
+```
+
+Claude Code prompts for the same local values through `userConfig`. Debug
+Bridge token and Web API key are marked sensitive.
+
+## Developer Command Mode
+
+For development, clients can start the MCP with a local command:
 
 ```toml
 [mcp_servers.zotero]
@@ -36,9 +49,7 @@ command = "/bin/bash"
 args = ["/Users/<you>/projects/zotero-mcp/scripts/run_zotero_mcp.sh"]
 ```
 
-Use Codex MCP settings for user-managed token/header fields when available.
-Developer command-mode installs can use shell environment variables or an
-untracked `.env`.
+Do not commit `.env`, PDFs, local Zotero data, or real tokens.
 
 ## Checks
 
