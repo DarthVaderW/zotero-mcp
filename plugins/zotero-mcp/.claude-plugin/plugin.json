@@ -1,7 +1,7 @@
 {
   "name": "zotero-mcp",
   "displayName": "Zotero MCP",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Connect Claude Code to local Zotero tools.",
   "author": {
     "name": "Haotian Wang",
@@ -16,8 +16,7 @@
     "zotero_debug_bridge_token": {
       "type": "string",
       "title": "Zotero Debug Bridge token",
-      "description": "Local token from your Zotero Debug Bridge plugin.",
-      "sensitive": true,
+      "description": "Local token from your Zotero Debug Bridge plugin. Stored in Claude Code plugin settings for compatibility with current userConfig injection.",
       "required": true
     },
     "zotero_debug_bridge_url": {
@@ -37,8 +36,7 @@
     "zotero_api_key": {
       "type": "string",
       "title": "Zotero Web API key",
-      "description": "Optional Zotero Web API key for remote/cloud workflows.",
-      "sensitive": true
+      "description": "Optional Zotero Web API key for remote/cloud workflows. Stored in Claude Code plugin settings for compatibility with current userConfig injection."
     },
     "zotero_user_id": {
       "type": "string",

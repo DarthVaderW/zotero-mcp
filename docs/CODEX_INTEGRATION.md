@@ -52,8 +52,10 @@ Inside Claude Code:
 /plugin install zotero-mcp@darthvaderw-zotero-mcp
 ```
 
-Claude Code prompts for the same local values through `userConfig`. Debug
-Bridge token and Web API key are marked sensitive.
+Claude Code prompts for the same local values through `userConfig`. For current
+Claude Code compatibility, Debug Bridge token and Web API key are stored with
+the other plugin options instead of using Claude's `sensitive` userConfig mode.
+This is local to the user's machine, but it is not keychain-backed.
 
 ## Developer Command Mode
 
@@ -86,8 +88,8 @@ The `ping` command requires Zotero running locally with Debug Bridge enabled.
 
 ## Claude Code Startup Failure
 
-If Claude Code suggests the token or sensitive `userConfig` may be wrong, first
-verify that `uvx` exists:
+If Claude Code suggests the token or `userConfig` may be wrong, first verify
+that `uvx` exists:
 
 ```bash
 command -v uvx
