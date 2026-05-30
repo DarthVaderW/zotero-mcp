@@ -14,6 +14,27 @@ Cross-system paper-library rules live in `research-paper-skill`, not here.
 This repository ships the same stdio MCP server for Codex and Claude Code. The
 MCP implementation is shared; only the plugin shell differs by client.
 
+Prerequisite:
+
+```bash
+uvx --version
+```
+
+If `uvx` is not found, install `uv` first. Official installer:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Homebrew is also fine on macOS:
+
+```bash
+brew install uv
+```
+
+After installing, restart Codex or Claude Code so the app can see the updated
+PATH.
+
 Codex:
 
 ```bash
@@ -73,3 +94,27 @@ python3 scripts/zotero.py ping
 ```
 
 The final command requires Zotero running locally with Debug Bridge enabled.
+
+## Troubleshooting
+
+If Claude Code reports that the MCP failed to start, check `uvx` before
+re-entering tokens:
+
+```bash
+command -v uvx
+uvx --version
+```
+
+`uvx: command not found` means the MCP process never started. Install `uv`,
+restart Claude Code, then retry the plugin. A missing `uvx` can look like a
+token or sensitive-storage problem, but the token is not used until the MCP
+server actually starts.
+
+If `uvx` works but `zotero_ping` fails, then check:
+
+```text
+Zotero is running
+Zotero Debug Bridge is enabled
+ZOTERO_DEBUG_BRIDGE_URL is http://127.0.0.1:23119/debug-bridge/execute unless changed
+ZOTERO_DEBUG_BRIDGE_TOKEN matches the local Debug Bridge token
+```

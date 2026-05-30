@@ -4,6 +4,20 @@ This repository contains a Zotero CLI and a thin Zotero MCP server.
 
 ## Codex Plugin Install
 
+Make sure `uvx` is available before installing the plugin:
+
+```bash
+uvx --version
+```
+
+If it is missing, install `uv` from Astral:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then restart Codex or Claude Code so the updated PATH is picked up.
+
 Install the public marketplace and plugin:
 
 ```bash
@@ -69,3 +83,16 @@ python3 scripts/zotero.py ping
 ```
 
 The `ping` command requires Zotero running locally with Debug Bridge enabled.
+
+## Claude Code Startup Failure
+
+If Claude Code suggests the token or sensitive `userConfig` may be wrong, first
+verify that `uvx` exists:
+
+```bash
+command -v uvx
+uvx --version
+```
+
+When `uvx` is missing, Claude Code cannot start the MCP server at all. Install
+`uv`, restart Claude Code, and retry before changing the Zotero token.
