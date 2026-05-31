@@ -44,7 +44,7 @@ Args:
   tool
   run
   --from
-  git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.8
+  git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.9
   zotero-mcp
 ```
 
@@ -92,7 +92,7 @@ Zotero data.
 ## Upgrade
 
 GUI custom MCP users upgrade by changing the Git tag in the MCP args, for
-example from `@v0.1.8` to the next release tag, then restarting Codex. Plugin
+example from `@v0.1.9` to the next release tag, then restarting Codex. Plugin
 users upgrade the marketplace snapshot, then restart Codex:
 
 ```bash
