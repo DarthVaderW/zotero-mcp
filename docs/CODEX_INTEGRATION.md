@@ -4,10 +4,10 @@ This repository contains a Zotero CLI and a thin Zotero MCP server.
 
 ## Codex Plugin Install
 
-Make sure `uvx` is available before installing the plugin:
+Make sure `uv` is available before installing the plugin:
 
 ```bash
-uvx --version
+uv --version
 ```
 
 If it is missing, install `uv` from Astral:
@@ -17,6 +17,19 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 Then restart Codex or Claude Code so the updated PATH is picked up.
+
+For the Codex GUI custom MCP flow, use:
+
+```text
+Name: zotero
+Command: uv
+Args:
+  tool
+  run
+  --from
+  git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.8
+  zotero-mcp
+```
 
 Install the public marketplace and plugin:
 
@@ -39,9 +52,18 @@ ZOTERO_GROUP_ID=<optional Zotero group id>
 CROSSREF_EMAIL=<email for CrossRef/Unpaywall>
 ```
 
-The plugin starts the stdio MCP with `uvx` from a fixed release tag; no local
+The plugin starts the stdio MCP with `uv tool run` from a fixed release tag; no local
 HTTP service is required, and normal MCP startup does not auto-refresh from
 GitHub.
+
+To upgrade the plugin install:
+
+```bash
+codex plugin marketplace upgrade zotero-mcp
+```
+
+For GUI custom MCP installs, change the tag in the args to the new release tag
+and restart Codex.
 
 ## Claude Code Plugin Install
 
@@ -89,12 +111,12 @@ The `ping` command requires Zotero running locally with Debug Bridge enabled.
 ## Claude Code Startup Failure
 
 If Claude Code suggests the token or `userConfig` may be wrong, first verify
-that `uvx` exists:
+that `uv` exists:
 
 ```bash
-command -v uvx
-uvx --version
+command -v uv
+uv --version
 ```
 
-When `uvx` is missing, Claude Code cannot start the MCP server at all. Install
+When `uv` is missing, Claude Code cannot start the MCP server at all. Install
 `uv`, restart Claude Code, and retry before changing the Zotero token.

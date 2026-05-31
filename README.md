@@ -17,10 +17,10 @@ MCP implementation is shared; only the plugin shell differs by client.
 Prerequisite:
 
 ```bash
-uvx --version
+uv --version
 ```
 
-If `uvx` is not found, install `uv` first. Official installer:
+If `uv` is not found, install it first. Official installer:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -34,6 +34,19 @@ brew install uv
 
 After installing, restart Codex or Claude Code so the app can see the updated
 PATH.
+
+Codex GUI custom MCP:
+
+```text
+Name: zotero
+Command: uv
+Args:
+  tool
+  run
+  --from
+  git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.8
+  zotero-mcp
+```
 
 Codex:
 
@@ -76,6 +89,16 @@ compatibility, tokens are stored with the other plugin options instead of using
 Claude's `sensitive` userConfig mode. Do not commit `.env`, PDFs, or local
 Zotero data.
 
+## Upgrade
+
+GUI custom MCP users upgrade by changing the Git tag in the MCP args, for
+example from `@v0.1.8` to the next release tag, then restarting Codex. Plugin
+users upgrade the marketplace snapshot, then restart Codex:
+
+```bash
+codex plugin marketplace upgrade zotero-mcp
+```
+
 ## Developer Command Mode
 
 For source development, point Codex or Claude Code at the local checkout:
@@ -99,20 +122,20 @@ The final command requires Zotero running locally with Debug Bridge enabled.
 
 ## Troubleshooting
 
-If Claude Code reports that the MCP failed to start, check `uvx` before
+If Claude Code reports that the MCP failed to start, check `uv` before
 re-entering tokens:
 
 ```bash
-command -v uvx
-uvx --version
+command -v uv
+uv --version
 ```
 
-`uvx: command not found` means the MCP process never started. Install `uv`,
-restart Claude Code, then retry the plugin. A missing `uvx` can look like a
+`uv: command not found` means the MCP process never started. Install `uv`,
+restart Claude Code, then retry the plugin. A missing `uv` can look like a
 token/config problem, but the token is not used until the MCP server actually
 starts.
 
-If `uvx` works but `zotero_ping` fails, then check:
+If `uv` works but `zotero_ping` fails, then check:
 
 ```text
 Zotero is running
