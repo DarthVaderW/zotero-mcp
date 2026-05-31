@@ -326,27 +326,27 @@ await Zotero.Schema.schemaUpdatePromise;
 const collection = Zotero.Collections.getByLibraryAndKey({DEBUG_BRIDGE_LIBRARY_ID}, {json.dumps(collection_key)});
 if (!collection) throw new Error("Collection not found");
 const items = await collection.getChildItems(false, false);
-return items.slice(0, {int(limit)}).map(i => ({
+return items.slice(0, {int(limit)}).map(i => ({{
   key: i.key,
   itemType: Zotero.ItemTypes.getName(i.itemTypeID),
   title: i.getDisplayTitle(),
   creators: i.getCreators().map(c => c.fieldMode === 1 ? c.lastName : ((c.firstName || "") + " " + (c.lastName || "")).trim()).filter(Boolean).join(", "),
   dateAdded: i.dateAdded,
   dateModified: i.dateModified
-}));
+}}));
 """
     else:
         js = f"""
 await Zotero.Schema.schemaUpdatePromise;
 const items = await Zotero.Items.getAll({DEBUG_BRIDGE_LIBRARY_ID}, false, ["itemType", "title", "creators", "dateAdded", "dateModified"]);
-return items.slice(0, {int(limit)}).map(i => ({
+return items.slice(0, {int(limit)}).map(i => ({{
   key: i.key,
   itemType: Zotero.ItemTypes.getName(i.itemTypeID),
   title: i.getDisplayTitle(),
   creators: i.getCreators().map(c => c.fieldMode === 1 ? c.lastName : ((c.firstName || "") + " " + (c.lastName || "")).trim()).filter(Boolean).join(", "),
   dateAdded: i.dateAdded,
   dateModified: i.dateModified
-}));
+}}));
 """
     return debug_bridge(js)
 
@@ -1164,6 +1164,9 @@ def cmd_get(args):
 def cmd_collections(_args):
     require_debug_bridge()
     cols = db_get_collections() or []
+    if _json_mode:
+        _json_print({"total": len(cols), "collections": cols})
+        return
     print(f"Collections ({len(cols)}):\n")
     for c in cols:
         print(f"[{c['key']}] {c['name']}")
@@ -1172,6 +1175,9 @@ def cmd_collections(_args):
 def cmd_tags(_args):
     require_debug_bridge()
     tags = db_get_tags() or []
+    if _json_mode:
+        _json_print({"total": len(tags), "tags": tags})
+        return
     print(f"Tags ({len(tags)}):\n")
     for t in tags:
         print(t["name"])
@@ -1182,6 +1188,9 @@ def cmd_children(args):
     if not validate_item_key(args.key):
         sys.exit(1)
     children = db_get_children(args.key) or []
+    if _json_mode:
+        _json_print({"total": len(children), "children": children})
+        return
     if not children:
         print("No children found.")
         return
@@ -1481,6 +1490,18 @@ def cmd_check_pdfs(_args):
 
     with_pdf = [parents[k] for k in parents if k in pdf_parents]
     without_pdf = [parents[k] for k in parents if k not in pdf_parents]
+
+    if _json_mode:
+        _json_print({
+            "total": len(with_pdf) + len(without_pdf),
+            "with_pdf": len(with_pdf),
+            "without_pdf": len(without_pdf),
+            "missing": [
+                {"key": it["data"].get("key", ""), "title": it["data"].get("title", "")}
+                for it in without_pdf
+            ],
+        })
+        return
 
     print("PDF Attachment Report")
     print(f"Total items: {len(with_pdf) + len(without_pdf)}")
