@@ -11,8 +11,9 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 
-ROOT = Path(__file__).resolve().parents[1]
-CLI = ROOT / "scripts" / "zotero.py"
+PACKAGE_DIR = Path(__file__).resolve().parent
+ROOT = PACKAGE_DIR.parent
+CLI = PACKAGE_DIR / "cli.py"
 MCP_HOST = os.getenv("ZOTERO_MCP_HOST", "127.0.0.1")
 MCP_PORT = int(os.getenv("ZOTERO_MCP_PORT", "6817"))
 MCP_PATH = os.getenv("ZOTERO_MCP_PATH", "/mcp")
@@ -144,6 +145,11 @@ def zotero_fetch_pdf(
     download_only: bool = False,
 ) -> dict[str, Any]:
     """Fetch OA PDFs remotely or attach a local PDF when key and file are provided."""
+    if bool(key) != bool(file):
+        raise ValueError(
+            "Local PDF attach mode requires both 'key' and 'file'. "
+            "Provide both to attach a local PDF, or omit both for remote Web API fetch mode."
+        )
     args = ["fetch-pdfs", "--title", title]
     if key:
         args.extend(["--key", key])

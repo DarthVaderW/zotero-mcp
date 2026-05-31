@@ -4,7 +4,7 @@
       "command": "uvx",
       "args": [
         "--from",
-        "git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.4",
+        "git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.5",
         "zotero-mcp"
       ],
       "env_vars": [

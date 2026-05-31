@@ -17,6 +17,9 @@ def headers(values: dict[str, str]) -> Iterator[None]:
 
 
 def main() -> None:
+    assert server.CLI.name == "cli.py"
+    assert server.CLI.exists()
+
     with headers({"authorization": "Bearer zotero-debug-token"}):
         assert server.env_from_headers()["ZOTERO_DEBUG_BRIDGE_TOKEN"] == "zotero-debug-token"
 
@@ -37,6 +40,13 @@ def main() -> None:
         assert env["ZOTERO_API_KEY"] == "web-api-key"
         assert env["ZOTERO_USER_ID"] == "123"
         assert env["CROSSREF_EMAIL"] == "reader@example.com"
+
+    try:
+        server.zotero_fetch_pdf(key="ABC12345")
+    except ValueError as error:
+        assert "requires both 'key' and 'file'" in str(error)
+    else:
+        raise AssertionError("zotero_fetch_pdf should reject key without file")
 
 
 if __name__ == "__main__":

@@ -5,7 +5,6 @@ Run:
   python3 tests/test_zotero_cli.py
 """
 
-import importlib.util
 import pathlib
 import subprocess
 import sys
@@ -17,10 +16,8 @@ SCRIPT = ROOT / "scripts" / "zotero.py"
 
 
 def load_module():
-    spec = importlib.util.spec_from_file_location("zotero_cli", SCRIPT)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
+    sys.path.insert(0, str(ROOT))
+    return __import__("zotero_mcp.cli", fromlist=["cli"])
 
 
 class ZoteroCLITest(unittest.TestCase):
@@ -66,6 +63,37 @@ class ZoteroCLITest(unittest.TestCase):
         d = {"creators": [{"lastName": "smith"}], "date": "2021-10-01"}
         name = self.mod._make_pdf_filename(d, "ABC12345")
         self.assertEqual(name, "Smith2021_ABC12345.pdf")
+
+    def test_create_item_preserves_zotero_fields(self):
+        captured = {}
+        original = self.mod.db_create_item
+
+        def fake_create_item(payload):
+            captured.update(payload)
+            return {"success": True, "key": "ABC12345"}
+
+        self.mod.db_create_item = fake_create_item
+        try:
+            key = self.mod.create_item(
+                {
+                    "title": "Payload test",
+                    "abstract": "Alias abstract",
+                    "DOI": "10.1000/payload",
+                    "publicationTitle": "Payload Journal",
+                    "extra_fields": {"volume": "42"},
+                }
+            )
+        finally:
+            self.mod.db_create_item = original
+
+        self.assertEqual(key, "ABC12345")
+        self.assertEqual(captured["itemType"], "journalArticle")
+        self.assertEqual(captured["title"], "Payload test")
+        self.assertEqual(captured["abstractNote"], "Alias abstract")
+        self.assertEqual(captured["DOI"], "10.1000/payload")
+        self.assertEqual(captured["publicationTitle"], "Payload Journal")
+        self.assertEqual(captured["volume"], "42")
+        self.assertNotIn("abstract", captured)
 
 
 if __name__ == "__main__":
