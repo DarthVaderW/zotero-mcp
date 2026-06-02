@@ -1,13 +1,11 @@
 # Zotero MCP
 
-Zotero MCP runtime and helper CLI for the research system.
+General-purpose Zotero MCP runtime and helper CLI.
 
 ## Layers
 
-- `scripts/zotero.py`: existing CLI, debug-bridge-first for local workflows and Web API for remote workflows.
+- `scripts/zotero.py`: CLI, Debug Bridge first for local Zotero operations and Web API for remote/cloud operations.
 - `zotero_mcp/server.py`: thin MCP wrapper around the CLI.
-
-Cross-system paper-library rules live in `research-paper-skill`, not here.
 
 ## Install
 
