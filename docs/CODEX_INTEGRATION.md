@@ -48,8 +48,11 @@ ZOTERO_LIBRARY_ID=1
 ZOTERO_API_KEY=<optional Zotero Web API key>
 ZOTERO_USER_ID=<optional Zotero user id>
 ZOTERO_GROUP_ID=<optional Zotero group id>
-CROSSREF_EMAIL=<email for CrossRef/Unpaywall>
+CROSSREF_EMAIL=<real contact email for CrossRef/Unpaywall>
 ```
+
+Set `CROSSREF_EMAIL` to a real contact email when using PDF discovery:
+Unpaywall requires it, and CrossRef uses it for polite requests.
 
 Do not use Codex plugin install as the ordinary path for this MCP right now.
 Codex plugin-provided MCP rows are read-only and do not currently expose an

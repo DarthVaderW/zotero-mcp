@@ -70,8 +70,11 @@ Optional Web API values:
 ZOTERO_API_KEY=<Zotero Web API key>
 ZOTERO_USER_ID=<Zotero user id>
 ZOTERO_GROUP_ID=<Zotero group id>
-CROSSREF_EMAIL=<email for CrossRef/Unpaywall>
+CROSSREF_EMAIL=<real contact email for CrossRef/Unpaywall>
 ```
+
+Set `CROSSREF_EMAIL` to a real contact email when using PDF discovery:
+Unpaywall requires it, and CrossRef uses it for polite requests.
 
 Codex users enter these in the custom STDIO MCP configuration. Claude Code users
 enter them through the plugin's `userConfig` prompt. For current Claude Code
