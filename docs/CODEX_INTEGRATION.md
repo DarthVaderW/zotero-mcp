@@ -1,10 +1,8 @@
 # Client Integration Notes
 
-This repository contains a Zotero CLI and a thin Zotero MCP server.
-
-For the full umbrella install and upgrade flow, see the control repository's
-`docs/INSTALL.md`. This component page keeps only the current client-specific
-shape.
+This repository contains a packaged Zotero CLI implementation and a thin Zotero
+MCP server. This component page keeps the current client-specific setup
+self-contained.
 
 ## Prerequisite
 
@@ -64,7 +62,8 @@ To upgrade after `stable` moves:
 uvx --refresh --from git+https://github.com/DarthVaderW/zotero-mcp.git@stable zotero-mcp --help >/dev/null
 ```
 
-Then fully restart Codex and open a new thread.
+Then fully restart Codex. Existing threads can see refreshed MCP tools after
+restart; if they do not, open a new thread.
 
 ## Claude Code
 
@@ -120,7 +119,7 @@ uv run python tests/test_header_config.py
 Local Debug Bridge:
 
 ```bash
-python3 scripts/zotero.py ping
+python3 -m zotero_mcp.cli ping
 ```
 
 The `ping` command requires Zotero running locally with Debug Bridge enabled.

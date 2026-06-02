@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lightweight no-secret tests for scripts/zotero.py.
+"""Lightweight no-secret tests for the packaged Zotero CLI.
 
 Run:
   python3 tests/test_zotero_cli.py
@@ -12,7 +12,6 @@ import unittest
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "zotero.py"
 
 
 def load_module():
@@ -27,7 +26,8 @@ class ZoteroCLITest(unittest.TestCase):
 
     def run_cli(self, *args):
         proc = subprocess.run(
-            [sys.executable, str(SCRIPT), *args],
+            [sys.executable, "-m", "zotero_mcp.cli", *args],
+            cwd=str(ROOT),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,

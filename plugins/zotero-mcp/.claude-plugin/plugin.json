@@ -51,8 +51,7 @@
     "crossref_email": {
       "type": "string",
       "title": "Crossref email",
-      "description": "Email used for CrossRef and Unpaywall requests.",
-      "default": "zotero-cli@example.com"
+      "description": "Optional real contact email used for CrossRef and Unpaywall requests."
     }
   }
 }

@@ -60,7 +60,7 @@ DEBUG_BRIDGE_URL = os.environ.get(
 DEBUG_BRIDGE_TOKEN = os.environ.get("ZOTERO_DEBUG_BRIDGE_TOKEN")
 DEBUG_BRIDGE_LIBRARY_ID = int(os.environ.get("ZOTERO_LIBRARY_ID", "1"))
 
-CROSSREF_EMAIL = os.environ.get("CROSSREF_EMAIL", "zotero-cli@example.com")
+CROSSREF_EMAIL = os.environ.get("CROSSREF_EMAIL", "").strip()
 DOI_ITEM_TYPES = {"journalArticle", "conferencePaper"}
 PDF_SOURCES = ["unpaywall", "semanticscholar", "doi"]
 
@@ -80,6 +80,15 @@ def _json_print(data) -> None:
 
 def _json_error(message: str, code: int = 0) -> None:
     print(json.dumps({"error": message, "code": code}), file=sys.stderr)
+
+
+def _pdf_user_agent() -> str:
+    contact = f"; mailto:{CROSSREF_EMAIL}" if CROSSREF_EMAIL else ""
+    return f"Mozilla/5.0 (compatible; ZoteroCLI/1.0{contact})"
+
+
+def _mcp_user_agent() -> str:
+    return "ZoteroMCP/1.0 (+https://github.com/DarthVaderW/zotero-mcp)"
 
 
 def require_debug_bridge() -> None:
@@ -289,7 +298,7 @@ def _download_pdf(url, dest_path):
     req = urllib.request.Request(
         url,
         headers={
-            "User-Agent": f"Mozilla/5.0 (compatible; ZoteroCLI/1.0; mailto:{CROSSREF_EMAIL})",
+            "User-Agent": _pdf_user_agent(),
             "Accept": "application/pdf,*/*",
         },
     )
@@ -584,7 +593,7 @@ def _extract_arxiv_id(arxiv_id_or_url):
 
 def _fetch_arxiv_metadata_from_abs_page(arxiv_id):
     url = f"https://arxiv.org/abs/{arxiv_id}"
-    req = urllib.request.Request(url, headers={"User-Agent": "ZoteroSkill/1.0 (+https://github.com/)"})
+    req = urllib.request.Request(url, headers={"User-Agent": _mcp_user_agent()})
     with urllib.request.urlopen(req, timeout=30) as resp:
         html_text = resp.read().decode("utf-8", errors="replace")
 
@@ -641,7 +650,7 @@ def _fetch_arxiv_metadata_from_abs_page(arxiv_id):
 
 def _fetch_arxiv_metadata(arxiv_id):
     url = "https://export.arxiv.org/api/query?" + urllib.parse.urlencode({"id_list": arxiv_id})
-    req = urllib.request.Request(url, headers={"Accept": "application/atom+xml", "User-Agent": "ZoteroSkill/1.0 (+https://github.com/)"})
+    req = urllib.request.Request(url, headers={"Accept": "application/atom+xml", "User-Agent": _mcp_user_agent()})
     try:
         with urllib.request.urlopen(req, timeout=30) as resp:
             xml_text = resp.read()
@@ -870,7 +879,9 @@ def _doi_to_item(doi):
 
 
 def _crossref_search(title, first_author):
-    params = {"query.bibliographic": title, "rows": "3", "mailto": CROSSREF_EMAIL}
+    params = {"query.bibliographic": title, "rows": "3"}
+    if CROSSREF_EMAIL:
+        params["mailto"] = CROSSREF_EMAIL
     if first_author:
         params["query.author"] = first_author
     url = "https://api.crossref.org/works?" + urllib.parse.urlencode(params)
@@ -929,7 +940,9 @@ def _patch_item_field(api_key, prefix, item_key, field, value, version):
 
 
 def _try_unpaywall(doi):
-    url = f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi, safe='')}?email={CROSSREF_EMAIL}"
+    url = f"https://api.unpaywall.org/v2/{urllib.parse.quote(doi, safe='')}"
+    if CROSSREF_EMAIL:
+        url += "?" + urllib.parse.urlencode({"email": CROSSREF_EMAIL})
     req = urllib.request.Request(url, headers={"Accept": "application/json"})
     try:
         with urllib.request.urlopen(req, timeout=15) as resp:

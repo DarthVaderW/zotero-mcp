@@ -4,7 +4,8 @@ General-purpose Zotero MCP runtime and helper CLI.
 
 ## Layers
 
-- `scripts/zotero.py`: CLI, Debug Bridge first for local Zotero operations and Web API for remote/cloud operations.
+- `zotero_mcp/cli.py`: CLI implementation, Debug Bridge first for local Zotero operations and Web API for remote/cloud operations.
+- `scripts/zotero.py`: compatibility shim for older local commands. New docs and tests use `python -m zotero_mcp.cli`.
 - `zotero_mcp/server.py`: thin MCP wrapper around the CLI.
 
 ## Install
@@ -85,7 +86,8 @@ read-only in Codex and do not expose an editable token/config form.
 
 ## Upgrade
 
-Codex users refresh the local `uvx @stable` cache, then fully restart Codex and
+Codex users refresh the local `uvx @stable` cache, then fully restart Codex.
+Existing threads can see refreshed MCP tools after restart; if they do not,
 open a new thread:
 
 ```bash
@@ -115,7 +117,7 @@ args = ["/Users/<you>/projects/zotero-mcp/scripts/run_zotero_mcp.sh"]
 python3 tests/test_zotero_cli.py
 uv run python tests/test_header_config.py
 uv run python tests/smoke_test_mcp.py --expect-tool zotero_ping
-python3 scripts/zotero.py ping
+python3 -m zotero_mcp.cli ping
 ```
 
 The final command requires Zotero running locally with Debug Bridge enabled.
