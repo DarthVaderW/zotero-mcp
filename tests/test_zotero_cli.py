@@ -76,6 +76,7 @@ class ZoteroCLITest(unittest.TestCase):
         try:
             key = self.mod.create_item(
                 {
+                    "itemType": "book",
                     "title": "Payload test",
                     "abstract": "Alias abstract",
                     "DOI": "10.1000/payload",
@@ -87,13 +88,17 @@ class ZoteroCLITest(unittest.TestCase):
             self.mod.db_create_item = original
 
         self.assertEqual(key, "ABC12345")
-        self.assertEqual(captured["itemType"], "journalArticle")
+        self.assertEqual(captured["itemType"], "book")
         self.assertEqual(captured["title"], "Payload test")
         self.assertEqual(captured["abstractNote"], "Alias abstract")
         self.assertEqual(captured["DOI"], "10.1000/payload")
         self.assertEqual(captured["publicationTitle"], "Payload Journal")
         self.assertEqual(captured["volume"], "42")
         self.assertNotIn("abstract", captured)
+
+    def test_create_item_requires_item_type(self):
+        with self.assertRaisesRegex(ValueError, "itemType is required"):
+            self.mod.create_item({"title": "Missing type"})
 
 
 if __name__ == "__main__":

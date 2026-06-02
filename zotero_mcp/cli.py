@@ -61,7 +61,7 @@ DEBUG_BRIDGE_TOKEN = os.environ.get("ZOTERO_DEBUG_BRIDGE_TOKEN")
 DEBUG_BRIDGE_LIBRARY_ID = int(os.environ.get("ZOTERO_LIBRARY_ID", "1"))
 
 CROSSREF_EMAIL = os.environ.get("CROSSREF_EMAIL", "").strip()
-DOI_ITEM_TYPES = {"journalArticle", "conferencePaper"}
+DOI_EXCLUDED_ITEM_TYPES = {"attachment", "note"}
 PDF_SOURCES = ["unpaywall", "semanticscholar", "doi"]
 
 _MAX_RETRIES = 2
@@ -441,9 +441,17 @@ return tags.slice(0, 200).map(t => ({{ name: t.tag, type: t.type }}));
 """)
 
 
+def require_item_type(payload):
+    item_type = str(payload.get("itemType") or "").strip()
+    if not item_type:
+        raise ValueError("itemType is required. Pass an explicit Zotero item type.")
+    payload["itemType"] = item_type
+    return item_type
+
+
 def db_create_item(item_data):
     payload = dict(item_data)
-    payload.setdefault("itemType", "journalArticle")
+    require_item_type(payload)
     payload.setdefault("title", "")
     js = f"""
 await Zotero.Schema.schemaUpdatePromise;
@@ -563,7 +571,7 @@ def create_item(meta):
     extra_fields = payload.pop("extra_fields", {})
     if isinstance(extra_fields, dict):
         payload.update(extra_fields)
-    payload.setdefault("itemType", "journalArticle")
+    require_item_type(payload)
     payload.setdefault("title", "")
     result = db_create_item(payload)
     if isinstance(result, dict) and result.get("success"):
@@ -621,16 +629,6 @@ def _fetch_arxiv_metadata_from_abs_page(arxiv_id):
     if not doi:
         doi = f"10.48550/arXiv.{arxiv_id.split('v')[0]}"
 
-    github_links = sorted(
-        set(
-            re.findall(
-                r"https?://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+(?:/[^\s\"'<>)]*)?",
-                html_text,
-                flags=re.IGNORECASE,
-            )
-        )
-    )
-
     return {
         "itemType": "preprint",
         "title": _meta("citation_title"),
@@ -644,7 +642,6 @@ def _fetch_arxiv_metadata_from_abs_page(arxiv_id):
             "DOI": doi,
         },
         "__pdf_url": _meta("citation_pdf_url") or f"https://arxiv.org/pdf/{arxiv_id}",
-        "__github_links": github_links,
     }
 
 
@@ -687,7 +684,6 @@ def _fetch_arxiv_metadata(arxiv_id):
         "creators": creators,
         "extra_fields": {"archive": "arXiv", "archiveLocation": arxiv_id, "DOI": doi},
         "__pdf_url": f"https://arxiv.org/pdf/{arxiv_id}",
-        "__github_links": [],
     }
 
 
@@ -731,7 +727,6 @@ def _fetch_arxiv_metadata_via_translator(arxiv_id):
             "DOI": (item.get("DOI", "") or "").strip(),
         },
         "__pdf_url": pdf_url or f"https://arxiv.org/pdf/{arxiv_id}",
-        "__github_links": [],
     }
 
 
@@ -750,9 +745,6 @@ def import_arxiv(arxiv_id_or_url, collection_name_or_key=None):
             meta.setdefault("extra_fields", {})["DOI"] = page_meta.get("extra_fields", {}).get("DOI", "")
         if not meta.get("__pdf_url"):
             meta["__pdf_url"] = page_meta.get("__pdf_url")
-        links = set(meta.get("__github_links", []))
-        links.update(page_meta.get("__github_links", []))
-        meta["__github_links"] = sorted(links)
     except Exception:
         pass
 
@@ -760,7 +752,6 @@ def import_arxiv(arxiv_id_or_url, collection_name_or_key=None):
         meta.setdefault("extra_fields", {})["DOI"] = f"10.48550/arXiv.{arxiv_id.split('v')[0]}"
 
     pdf_url = meta.pop("__pdf_url", f"https://arxiv.org/pdf/{arxiv_id}")
-    github_links = meta.pop("__github_links", [])
 
     item_key = create_item(meta)
 
@@ -780,15 +771,6 @@ def import_arxiv(arxiv_id_or_url, collection_name_or_key=None):
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
-    note_key = None
-    if github_links:
-        links_html = "".join([f"<li><a href='{html.escape(u)}'>{html.escape(u)}</a></li>" for u in github_links])
-        note_html = f"<p>Code links detected on arXiv page:</p><ul>{links_html}</ul>"
-        try:
-            note_key = db_add_note(item_key, note_html)
-        except Exception:
-            pass
-
     collection = None
     if collection_name_or_key:
         try:
@@ -802,7 +784,6 @@ def import_arxiv(arxiv_id_or_url, collection_name_or_key=None):
         "item_key": item_key,
         "attachment_key": attachment_key,
         "snapshot_key": snapshot_key,
-        "note_key": note_key,
         "collection": collection,
     }
 
@@ -1589,7 +1570,7 @@ def cmd_find_dois(args):
     for item in items:
         d = item["data"]
         itype = d.get("itemType", "")
-        if itype not in DOI_ITEM_TYPES:
+        if itype in DOI_EXCLUDED_ITEM_TYPES:
             skipped_wrong_type += 1
             continue
         if d.get("DOI", "").strip():

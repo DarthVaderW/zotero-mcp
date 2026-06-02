@@ -115,7 +115,7 @@ def zotero_get_item(key: str) -> dict[str, Any]:
 
 @mcp.tool()
 def zotero_import_arxiv(arxiv: str, collection: str | None = None) -> dict[str, Any]:
-    """Import or reuse an arXiv paper in local Zotero and attach the PDF."""
+    """Import or reuse an arXiv item in local Zotero and attach the PDF."""
     args = ["arxiv", arxiv]
     if collection:
         args.extend(["--collection", collection])
