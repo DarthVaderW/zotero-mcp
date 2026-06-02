@@ -27,7 +27,7 @@ Args:
   tool
   run
   --from
-  git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.9
+  git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.10
   zotero-mcp
 ```
 
