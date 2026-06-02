@@ -444,7 +444,7 @@ return tags.slice(0, 200).map(t => ({{ name: t.tag, type: t.type }}));
 def require_item_type(payload):
     item_type = str(payload.get("itemType") or "").strip()
     if not item_type:
-        raise ValueError("itemType is required. Pass an explicit Zotero item type.")
+        raise RuntimeError("itemType is required. Pass an explicit Zotero item type.")
     payload["itemType"] = item_type
     return item_type
 
@@ -504,20 +504,6 @@ const att = await Zotero.Attachments.importFromURL({{
   contentType: "text/html"
 }});
 return att ? att.key : null;
-""")
-
-
-def db_add_note(parent_key, note_html):
-    return debug_bridge(f"""
-await Zotero.Schema.schemaUpdatePromise;
-const parent = Zotero.Items.getByLibraryAndKey({DEBUG_BRIDGE_LIBRARY_ID}, {json.dumps(parent_key)});
-if (!parent) throw new Error("Parent item not found");
-const note = new Zotero.Item("note");
-note.libraryID = {DEBUG_BRIDGE_LIBRARY_ID};
-note.parentID = parent.id;
-note.setNote({json.dumps(note_html)});
-await note.saveTx();
-return note.key;
 """)
 
 

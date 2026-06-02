@@ -97,7 +97,7 @@ class ZoteroCLITest(unittest.TestCase):
         self.assertNotIn("abstract", captured)
 
     def test_create_item_requires_item_type(self):
-        with self.assertRaisesRegex(ValueError, "itemType is required"):
+        with self.assertRaisesRegex(RuntimeError, "itemType is required"):
             self.mod.create_item({"title": "Missing type"})
 
 
