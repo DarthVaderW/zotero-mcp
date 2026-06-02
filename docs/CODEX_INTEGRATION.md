@@ -1,46 +1,47 @@
-# Codex And Claude Code Integration
+# Client Integration Notes
 
 This repository contains a Zotero CLI and a thin Zotero MCP server.
 
-## Codex Plugin Install
+For the full umbrella install and upgrade flow, see the control repository's
+`docs/INSTALL.md`. This component page keeps only the current client-specific
+shape.
 
-Make sure `uv` is available before installing the plugin:
+## Prerequisite
+
+Make sure `uv` and `uvx` are available to desktop apps:
 
 ```bash
 uv --version
+uvx --version
 ```
 
-If it is missing, install `uv` from Astral:
+If either command is missing, install `uv` and then restart Codex or Claude
+Code:
+
+```bash
+brew install uv
+```
+
+or:
 
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-Then restart Codex or Claude Code so the updated PATH is picked up.
+## Codex
 
-For the Codex GUI custom MCP flow, use:
+Use a custom STDIO MCP entry in Codex.
 
 ```text
 Name: zotero
-Command: uv
+Command: uvx
 Args:
-  tool
-  run
   --from
-  git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.10
+  git+https://github.com/DarthVaderW/zotero-mcp.git@stable
   zotero-mcp
 ```
 
-Install the public marketplace and plugin:
-
-```bash
-codex plugin marketplace add DarthVaderW/zotero-mcp --ref stable \
-  --sparse .agents/plugins \
-  --sparse plugins/zotero-mcp
-codex plugin add zotero-mcp@zotero-mcp
-```
-
-Then configure these values in Codex Settings -> MCP:
+Configure these values in the same MCP entry:
 
 ```text
 ZOTERO_DEBUG_BRIDGE_TOKEN=<local Zotero Debug Bridge token>
@@ -52,32 +53,48 @@ ZOTERO_GROUP_ID=<optional Zotero group id>
 CROSSREF_EMAIL=<email for CrossRef/Unpaywall>
 ```
 
-The plugin starts the stdio MCP with `uv tool run` from a fixed release tag; no local
-HTTP service is required, and normal MCP startup does not auto-refresh from
-GitHub.
+Do not use Codex plugin install as the ordinary path for this MCP right now.
+Codex plugin-provided MCP rows are read-only and do not currently expose an
+editable token/config form. The Codex plugin shell remains in the repository for
+packaging, marketplace testing, and possible future Codex plugin improvements.
 
-To upgrade the plugin install:
+To upgrade after `stable` moves:
 
 ```bash
-codex plugin marketplace upgrade zotero-mcp
+uvx --refresh --from git+https://github.com/DarthVaderW/zotero-mcp.git@stable zotero-mcp --help >/dev/null
 ```
 
-For GUI custom MCP installs, change the tag in the args to the new release tag
-and restart Codex.
+Then fully restart Codex and open a new thread.
 
-## Claude Code Plugin Install
+## Claude Code
 
-Inside Claude Code:
+Use the GUI Personal plugins path when available:
 
 ```text
-/plugin marketplace add DarthVaderW/zotero-mcp
-/plugin install zotero-mcp@darthvaderw-zotero-mcp
+Customize -> Personal plugins -> Add
+DarthVaderW/zotero-mcp
+```
+
+CLI install is also valid:
+
+```bash
+claude plugin marketplace add DarthVaderW/zotero-mcp
+claude plugin install zotero-mcp@darthvaderw-zotero-mcp
 ```
 
 Claude Code prompts for the same local values through `userConfig`. For current
 Claude Code compatibility, Debug Bridge token and Web API key are stored with
 the other plugin options instead of using Claude's `sensitive` userConfig mode.
 This is local to the user's machine, but it is not keychain-backed.
+
+To upgrade:
+
+```bash
+claude plugin marketplace update darthvaderw-zotero-mcp
+claude plugin update zotero-mcp@darthvaderw-zotero-mcp
+```
+
+Restart Claude Code after updating.
 
 ## Developer Command Mode
 

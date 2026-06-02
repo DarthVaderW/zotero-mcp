@@ -11,8 +11,8 @@ Cross-system paper-library rules live in `research-paper-skill`, not here.
 
 ## Install
 
-This repository ships the same stdio MCP server for Codex and Claude Code. The
-MCP implementation is shared; only the plugin shell differs by client.
+This repository ships one stdio MCP server. Codex and Claude Code use the same
+server, but the ordinary client setup differs.
 
 Prerequisite:
 
@@ -35,33 +35,24 @@ brew install uv
 After installing, restart Codex or Claude Code so the app can see the updated
 PATH.
 
-Codex GUI custom MCP:
+Codex recommended path: add a custom STDIO MCP server in the Codex MCP Servers
+settings.
 
 ```text
 Name: zotero
-Command: uv
+Command: uvx
 Args:
-  tool
-  run
   --from
-  git+https://github.com/DarthVaderW/zotero-mcp.git@v0.1.10
+  git+https://github.com/DarthVaderW/zotero-mcp.git@stable
   zotero-mcp
 ```
 
-Codex:
-
-```bash
-codex plugin marketplace add DarthVaderW/zotero-mcp --ref stable \
-  --sparse .agents/plugins \
-  --sparse plugins/zotero-mcp
-codex plugin add zotero-mcp@zotero-mcp
-```
-
-Claude Code:
+Claude Code recommended path: use the GUI Personal plugins flow, or the
+equivalent CLI plugin commands.
 
 ```text
-/plugin marketplace add DarthVaderW/zotero-mcp
-/plugin install zotero-mcp@darthvaderw-zotero-mcp
+Customize -> Personal plugins -> Add
+DarthVaderW/zotero-mcp
 ```
 
 ## Configure
@@ -83,20 +74,31 @@ ZOTERO_GROUP_ID=<Zotero group id>
 CROSSREF_EMAIL=<email for CrossRef/Unpaywall>
 ```
 
-Codex users enter these in the Codex MCP configuration UI. Claude Code users
+Codex users enter these in the custom STDIO MCP configuration. Claude Code users
 enter them through the plugin's `userConfig` prompt. For current Claude Code
 compatibility, tokens are stored with the other plugin options instead of using
 Claude's `sensitive` userConfig mode. Do not commit `.env`, PDFs, or local
 Zotero data.
 
+Codex plugin manifests are still kept in this repository for packaging,
+marketplace testing, and possible future Codex plugin improvements. They are not
+the ordinary Codex install path right now because plugin-provided MCP rows are
+read-only in Codex and do not expose an editable token/config form.
+
 ## Upgrade
 
-GUI custom MCP users upgrade by changing the Git tag in the MCP args, for
-example from `@v0.1.10` to the next release tag, then restarting Codex. Plugin
-users upgrade the marketplace snapshot, then restart Codex:
+Codex users refresh the local `uvx @stable` cache, then fully restart Codex and
+open a new thread:
 
 ```bash
-codex plugin marketplace upgrade zotero-mcp
+uvx --refresh --from git+https://github.com/DarthVaderW/zotero-mcp.git@stable zotero-mcp --help >/dev/null
+```
+
+Claude Code users update the marketplace/plugin, then restart Claude Code:
+
+```bash
+claude plugin marketplace update darthvaderw-zotero-mcp
+claude plugin update zotero-mcp@darthvaderw-zotero-mcp
 ```
 
 ## Developer Command Mode
