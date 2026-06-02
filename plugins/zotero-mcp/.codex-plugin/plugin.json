@@ -1,6 +1,6 @@
 {
   "name": "zotero-mcp",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Zotero MCP server template for Codex.",
   "author": {
     "name": "Haotian Wang",
@@ -17,7 +17,7 @@
     "developerName": "Haotian Wang",
     "category": "Productivity",
     "capabilities": ["mcp"],
-    "defaultPrompt": "Use Zotero MCP to search or update my paper library."
+    "defaultPrompt": "Use Zotero MCP to search or update my Zotero library."
   },
   "mcpServers": "./.mcp.json"
 }
