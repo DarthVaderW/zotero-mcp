@@ -116,7 +116,6 @@ No-secret tests:
 
 ```bash
 python3 tests/test_zotero_cli.py
-uv run python tests/test_header_config.py
 ```
 
 Local Debug Bridge:

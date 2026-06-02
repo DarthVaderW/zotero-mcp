@@ -117,7 +117,6 @@ args = ["/Users/<you>/projects/zotero-mcp/scripts/run_zotero_mcp.sh"]
 
 ```bash
 python3 tests/test_zotero_cli.py
-uv run python tests/test_header_config.py
 uv run python tests/smoke_test_mcp.py --expect-tool zotero_ping
 python3 -m zotero_mcp.cli ping
 ```

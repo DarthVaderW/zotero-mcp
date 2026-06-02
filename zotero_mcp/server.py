@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import argparse
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -14,70 +12,15 @@ from mcp.server.fastmcp import FastMCP
 PACKAGE_DIR = Path(__file__).resolve().parent
 ROOT = PACKAGE_DIR.parent
 CLI = PACKAGE_DIR / "cli.py"
-MCP_HOST = os.getenv("ZOTERO_MCP_HOST", "127.0.0.1")
-MCP_PORT = int(os.getenv("ZOTERO_MCP_PORT", "6817"))
-MCP_PATH = os.getenv("ZOTERO_MCP_PATH", "/mcp")
 
-mcp = FastMCP("zotero-mcp", host=MCP_HOST, port=MCP_PORT, streamable_http_path=MCP_PATH)
-
-
-def request_headers() -> Any:
-    try:
-        request = mcp.get_context().request_context.request
-    except Exception:
-        return {}
-    return getattr(request, "headers", {}) or {}
-
-
-def header_value(*names: str) -> str | None:
-    headers = request_headers()
-    for name in names:
-        try:
-            value = headers.get(name)
-        except AttributeError:
-            value = None
-        if value:
-            return str(value).strip()
-    return None
-
-
-def bearer_token() -> str | None:
-    authorization = header_value("authorization")
-    if not authorization:
-        return None
-    scheme, _, value = authorization.partition(" ")
-    if scheme.lower() == "bearer" and value.strip():
-        return value.strip()
-    return None
-
-
-def env_from_headers() -> dict[str, str]:
-    values: dict[str, str | None] = {
-        "ZOTERO_DEBUG_BRIDGE_TOKEN": (
-            header_value("x-zotero-debug-bridge-token", "zotero-debug-bridge-token")
-            or bearer_token()
-        ),
-        "ZOTERO_DEBUG_BRIDGE_URL": header_value(
-            "x-zotero-debug-bridge-url",
-            "zotero-debug-bridge-url",
-        ),
-        "ZOTERO_LIBRARY_ID": header_value("x-zotero-library-id", "zotero-library-id"),
-        "ZOTERO_API_KEY": header_value("x-zotero-api-key", "zotero-api-key"),
-        "ZOTERO_USER_ID": header_value("x-zotero-user-id", "zotero-user-id"),
-        "ZOTERO_GROUP_ID": header_value("x-zotero-group-id", "zotero-group-id"),
-        "CROSSREF_EMAIL": header_value("x-crossref-email", "crossref-email"),
-    }
-    return {key: value for key, value in values.items() if value}
+mcp = FastMCP("zotero-mcp")
 
 
 def run_zotero(args: list[str], expect_json: bool = True) -> dict[str, Any]:
     command = [sys.executable, str(CLI), "--json", *args]
-    env = os.environ.copy()
-    env.update(env_from_headers())
     proc = subprocess.run(
         command,
         cwd=str(ROOT),
-        env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -336,22 +279,7 @@ def zotero_delete_items(keys: list[str]) -> dict[str, Any]:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the Zotero MCP server.")
-    parser.add_argument(
-        "--transport",
-        choices=["stdio", "streamable-http"],
-        default=os.getenv("ZOTERO_MCP_TRANSPORT", "stdio"),
-        help="MCP transport. Use streamable-http for Codex UI URL mode.",
-    )
-    parser.add_argument("--host", default=MCP_HOST, help="HTTP host for streamable-http.")
-    parser.add_argument("--port", type=int, default=MCP_PORT, help="HTTP port for streamable-http.")
-    parser.add_argument("--path", default=MCP_PATH, help="HTTP MCP path for streamable-http.")
-    args = parser.parse_args()
-
-    mcp.settings.host = args.host
-    mcp.settings.port = args.port
-    mcp.settings.streamable_http_path = args.path
-    mcp.run(transport=args.transport)
+    mcp.run()
 
 
 if __name__ == "__main__":
