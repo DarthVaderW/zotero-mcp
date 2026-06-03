@@ -1,6 +1,6 @@
 [project]
 name = "zotero-mcp"
-version = "0.2.0"
+version = "0.2.1"
 description = "Zotero CLI and MCP server for local and Web API operations."
 readme = "README.md"
 requires-python = ">=3.10"
