@@ -6,18 +6,26 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from zotero_mcp.cli import (
+    op_add_identifier,
     op_arxiv,
     op_attach_pdf,
+    op_batch_add,
+    op_check_pdfs,
     op_children,
     op_collections,
     op_create_item,
+    op_crossref,
+    op_delete_items,
+    op_export,
+    op_fetch_pdfs,
+    op_find_dois,
     op_get,
     op_items,
     op_ping,
     op_search,
     op_tags,
+    op_update_item,
 )
-from zotero_mcp.runtime import run_zotero
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -83,22 +91,16 @@ def zotero_fetch_pdf(
             "Local PDF attach mode requires both 'key' and 'file'. "
             "Provide both to attach a local PDF, or omit both for remote Web API fetch mode."
         )
-    args = ["fetch-pdfs", "--title", title]
-    if key:
-        args.extend(["--key", key])
-    if file:
-        args.extend(["--file", root_relative_path(file)])
-    if collection:
-        args.extend(["--collection", collection])
-    if limit is not None:
-        args.extend(["--limit", str(limit)])
-    if dry_run:
-        args.append("--dry-run")
-    if download_only:
-        args.append("--download-only")
-    if not key:
-        args.extend(["--download-dir", str(ROOT / "pdfs")])
-    return run_zotero(args, expect_json=False)
+    return op_fetch_pdfs(
+        key=key,
+        file=root_relative_path(file) if file else None,
+        title=title,
+        collection=collection,
+        limit=limit,
+        dry_run=dry_run,
+        download_only=download_only,
+        download_dir=str(ROOT / "pdfs"),
+    )
 
 
 @mcp.tool()
@@ -128,7 +130,7 @@ def zotero_get_children(key: str) -> dict[str, Any]:
 @mcp.tool()
 def zotero_check_pdfs() -> dict[str, Any]:
     """Report which library items have or are missing PDF attachments (Web API)."""
-    return run_zotero(["check-pdfs"])
+    return op_check_pdfs()
 
 
 @mcp.tool()
@@ -146,14 +148,13 @@ def zotero_add_by_identifier(
     """
     if id_type not in {"doi", "isbn", "pmid"}:
         raise ValueError("id_type must be one of: doi, isbn, pmid")
-    args = [f"add-{id_type}", identifier]
-    if collection:
-        args.extend(["--collection", collection])
-    if tags:
-        args.extend(["--tags", tags])
-    if force:
-        args.append("--force")
-    return run_zotero(args, expect_json=False)
+    return op_add_identifier(
+        identifier,
+        id_type=id_type,
+        collection=collection,
+        tags=tags,
+        force=force,
+    )
 
 
 @mcp.tool()
@@ -171,22 +172,16 @@ def zotero_update_item(
 
     add_tags/remove_tags are comma-separated strings. Only provided fields change.
     """
-    args = ["update", key]
-    if title is not None:
-        args.extend(["--title", title])
-    if date is not None:
-        args.extend(["--date", date])
-    if doi is not None:
-        args.extend(["--doi", doi])
-    if url is not None:
-        args.extend(["--url", url])
-    if add_tags:
-        args.extend(["--add-tags", add_tags])
-    if remove_tags:
-        args.extend(["--remove-tags", remove_tags])
-    if add_collection:
-        args.extend(["--add-collection", add_collection])
-    return run_zotero(args, expect_json=False)
+    return op_update_item(
+        key,
+        title=title,
+        date=date,
+        doi=doi,
+        url=url,
+        add_tags=add_tags,
+        remove_tags=remove_tags,
+        add_collection=add_collection,
+    )
 
 
 @mcp.tool()
@@ -201,12 +196,11 @@ def zotero_export(
     """
     if format not in {"bibtex", "ris", "csljson"}:
         raise ValueError("format must be one of: bibtex, ris, csljson")
-    args = ["export", "--format", format]
-    if collection:
-        args.extend(["--collection", collection])
-    if output:
-        args.extend(["--output", root_relative_path(output)])
-    return run_zotero(args, expect_json=False)
+    return op_export(
+        format=format,
+        collection=collection,
+        output=root_relative_path(output) if output else None,
+    )
 
 
 @mcp.tool()
@@ -223,14 +217,13 @@ def zotero_batch_add(
     """
     if id_type not in {"doi", "isbn", "pmid"}:
         raise ValueError("id_type must be one of: doi, isbn, pmid")
-    args = ["batch-add", root_relative_path(file), "--type", id_type]
-    if collection:
-        args.extend(["--collection", collection])
-    if tags:
-        args.extend(["--tags", tags])
-    if force:
-        args.append("--force")
-    return run_zotero(args, expect_json=False)
+    return op_batch_add(
+        root_relative_path(file),
+        id_type=id_type,
+        collection=collection,
+        tags=tags,
+        force=force,
+    )
 
 
 @mcp.tool()
@@ -240,20 +233,13 @@ def zotero_find_dois(
     collection: str | None = None,
 ) -> dict[str, Any]:
     """Find missing DOIs for items via CrossRef. Read-only unless apply=True writes them."""
-    args = ["find-dois"]
-    if apply:
-        args.append("--apply")
-    if limit is not None:
-        args.extend(["--limit", str(limit)])
-    if collection:
-        args.extend(["--collection", collection])
-    return run_zotero(args, expect_json=False)
+    return op_find_dois(apply=apply, limit=limit, collection=collection)
 
 
 @mcp.tool()
 def zotero_crossref(file: str) -> dict[str, Any]:
     """Cross-reference 'Author (Year)' citations in a text/markdown file against the library."""
-    return run_zotero(["crossref", root_relative_path(file)], expect_json=False)
+    return op_crossref(root_relative_path(file))
 
 
 @mcp.tool()
@@ -264,7 +250,7 @@ def zotero_delete_items(keys: list[str]) -> dict[str, Any]:
     """
     if not keys:
         raise ValueError("Provide at least one item key to delete.")
-    return run_zotero(["delete", *keys, "--yes", "--trash"], expect_json=False)
+    return op_delete_items(keys, permanent=False)
 
 
 def main() -> None:

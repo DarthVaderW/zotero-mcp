@@ -1,16 +1,15 @@
 # Zotero MCP
 
-General-purpose Zotero MCP runtime and helper CLI.
+General-purpose Zotero MCP server and helper CLI.
 
 ## Layers
 
 - `zotero_mcp/cli.py`: structured Zotero operations plus CLI-only text/JSON presentation.
-- `zotero_mcp/runtime.py`: compatibility dispatcher for remaining text/progress commands.
-- `zotero_mcp/server.py`: MCP tool surface that calls structured operations directly where available.
+- `zotero_mcp/server.py`: MCP tool surface that calls structured operations directly.
 
 For MCP tools that accept file paths, absolute paths are preferred. Relative
 paths are resolved from the repository root to preserve the earlier CLI-wrapper
-runtime behavior.
+behavior.
 
 ## Install
 

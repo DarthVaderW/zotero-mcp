@@ -69,6 +69,12 @@ _RETRY_CODES = {429, 503}
 _json_mode = False
 
 
+class CommandError(RuntimeError):
+    def __init__(self, message: str, code: int = 0):
+        super().__init__(message)
+        self.code = code
+
+
 def _enable_json_mode() -> None:
     _set_json_mode(True)
 
@@ -114,15 +120,15 @@ def require_debug_bridge() -> None:
 def get_api_config() -> tuple[str, str]:
     api_key = os.environ.get("ZOTERO_API_KEY")
     if not api_key:
-        print("Error: ZOTERO_API_KEY environment variable not set", file=sys.stderr)
-        print("Create a key at https://www.zotero.org/settings/keys/new", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(
+            "Error: ZOTERO_API_KEY environment variable not set\n"
+            "Create a key at https://www.zotero.org/settings/keys/new"
+        )
 
     user_id = os.environ.get("ZOTERO_USER_ID")
     group_id = os.environ.get("ZOTERO_GROUP_ID")
     if not user_id and not group_id:
-        print("Error: Set ZOTERO_USER_ID or ZOTERO_GROUP_ID", file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError("Error: Set ZOTERO_USER_ID or ZOTERO_GROUP_ID")
 
     prefix = f"/users/{user_id}" if user_id else f"/groups/{group_id}"
     return api_key, prefix
@@ -187,29 +193,17 @@ def api_request(path, api_key, method="GET", data=None, content_type=None, param
                 continue
             err_body = e.read().decode("utf-8") if e.fp else ""
             msg = f"API Error {e.code}: {e.reason}"
-            if _json_mode:
-                _json_error(msg, e.code)
-            else:
-                print(msg, file=sys.stderr)
-                if err_body:
-                    print(err_body[:500], file=sys.stderr)
-            sys.exit(1)
+            if err_body:
+                msg += f"\n{err_body[:500]}"
+            raise CommandError(msg, e.code) from e
         except urllib.error.URLError as e:
             if attempt < _MAX_RETRIES:
                 time.sleep((attempt + 1) * 2)
                 continue
             msg = f"Network error: {e.reason}"
-            if _json_mode:
-                _json_error(msg, 0)
-            else:
-                print(msg, file=sys.stderr)
-            sys.exit(1)
+            raise CommandError(msg, 0) from e
 
-    if _json_mode:
-        _json_error(f"Request failed after {_MAX_RETRIES + 1} attempts", 0)
-    else:
-        print(f"Request failed after {_MAX_RETRIES + 1} attempts", file=sys.stderr)
-    sys.exit(1)
+    raise CommandError(f"Request failed after {_MAX_RETRIES + 1} attempts", 0)
 
 
 def api_get_json(path, api_key, params=None):
@@ -242,6 +236,12 @@ def validate_doi(s):
     return True
 
 
+def require_doi(s):
+    if not re.match(r"^10\.\d{4,}/\S+$", s):
+        raise RuntimeError(f"Invalid DOI format: '{s}'. Expected pattern: 10.xxxx/...")
+    return s
+
+
 def validate_item_key(s):
     if not re.match(r"^[A-Za-z0-9]{8}$", s):
         print(f"Invalid item key: '{s}'. Must be 8 alphanumeric characters.", file=sys.stderr)
@@ -261,6 +261,13 @@ def validate_isbn(s):
         print(f"Invalid ISBN: '{s}'. Must be 10 or 13 digits.", file=sys.stderr)
         return False
     return True
+
+
+def require_isbn(s):
+    cleaned = s.replace("-", "").replace(" ", "")
+    if not re.match(r"^\d{10}(\d{3})?$", cleaned):
+        raise RuntimeError(f"Invalid ISBN: '{s}'. Must be 10 or 13 digits.")
+    return s
 
 
 def fmt_creators(creators):
@@ -1158,6 +1165,551 @@ def op_arxiv(arxiv, collection_name_or_key=None):
     return import_arxiv(arxiv, collection_name_or_key=collection_name_or_key)
 
 
+def op_delete_items(keys, permanent=False):
+    ensure_debug_bridge()
+    result = {
+        "mode": "permanent" if permanent else "trash",
+        "deleted": [],
+        "missing": [],
+        "invalid": [],
+        "failed": [],
+    }
+    for key in keys:
+        if not re.match(r"^[A-Za-z0-9]{8}$", key):
+            result["invalid"].append({"key": key, "error": "Invalid item key"})
+            continue
+        item = db_get_item(key)
+        if not item:
+            result["missing"].append({"key": key})
+            continue
+        deleted = db_delete_item(key, permanent=permanent)
+        entry = {
+            "key": key,
+            "title": item.get("title", "Untitled"),
+            "mode": deleted.get("mode", result["mode"]),
+        }
+        if deleted.get("success"):
+            result["deleted"].append(entry)
+        else:
+            entry["error"] = deleted.get("error", "Unknown error")
+            result["failed"].append(entry)
+    result["total"] = len(keys)
+    return result
+
+
+def _identifier_lookup_url(identifier, id_type):
+    if id_type == "doi":
+        require_doi(identifier)
+        return f"https://doi.org/{identifier}"
+    if id_type == "isbn":
+        require_isbn(identifier)
+        return f"https://www.worldcat.org/isbn/{identifier}"
+    if id_type == "pmid":
+        return f"https://pubmed.ncbi.nlm.nih.gov/{identifier}/"
+    raise RuntimeError(f"Unknown identifier type: {id_type}")
+
+
+def _translate_identifier(identifier, id_type):
+    lookup_url = _identifier_lookup_url(identifier, id_type)
+    translate_data = json.dumps({"url": lookup_url, "sessionid": "zotero-cli"}).encode("utf-8")
+    translate_req = urllib.request.Request(
+        "https://translate.zotero.org/web",
+        data=translate_data,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(translate_req, timeout=30) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if id_type == "doi":
+            translated = _doi_to_item(identifier)
+            if translated:
+                return translated
+        raise RuntimeError(f"Translation failed: {e.code} {e.reason}") from e
+    except Exception as e:
+        raise RuntimeError(f"Translation failed: {e}") from e
+
+
+def op_add_identifier(identifier, id_type="doi", collection=None, tags=None, force=False):
+    api_key, prefix = get_api_config()
+    translated = _translate_identifier(identifier, id_type)
+    if not translated:
+        raise RuntimeError("No metadata found for this identifier.")
+
+    new_items = translated[:1] if isinstance(translated, list) else [translated]
+    if not force:
+        existing = _check_duplicate_by_metadata(api_key, prefix, new_items[0], identifier, id_type)
+        if existing:
+            data = existing.get("data", existing)
+            return {
+                "status": "duplicate",
+                "identifier": identifier,
+                "idType": id_type,
+                "existing": {
+                    "key": data.get("key", existing.get("key", "")),
+                    "title": data.get("title", existing.get("title", "")),
+                    "summary": fmt_item_short(existing),
+                },
+            }
+
+    tag_values = [tag.strip() for tag in (tags or "").split(",") if tag.strip()]
+    for item in new_items:
+        for field in ["key", "version", "dateAdded", "dateModified", "relations"]:
+            item.pop(field, None)
+        if collection:
+            item["collections"] = [collection]
+        if tag_values:
+            existing_tags = item.get("tags", [])
+            existing_tags.extend({"tag": tag} for tag in tag_values)
+            item["tags"] = existing_tags
+
+    body, _ = api_request(f"{prefix}/items", api_key, method="POST", data=new_items, content_type="application/json")
+    response = json.loads(body) if body.strip() else {}
+    successful = [
+        {"key": item.get("key", ""), "title": item.get("data", {}).get("title", "untitled")}
+        for item in response.get("successful", {}).values()
+    ]
+    failed = [
+        {"message": err.get("message", "unknown error")}
+        for err in response.get("failed", {}).values()
+    ]
+    if failed:
+        return {
+            "status": "failed",
+            "identifier": identifier,
+            "idType": id_type,
+            "successful": successful,
+            "failed": failed,
+        }
+    return {
+        "status": "added",
+        "identifier": identifier,
+        "idType": id_type,
+        "successful": successful,
+        "raw": response,
+    }
+
+
+def op_update_item(
+    key,
+    title=None,
+    date=None,
+    doi=None,
+    url=None,
+    add_tags=None,
+    remove_tags=None,
+    add_collection=None,
+):
+    api_key, prefix = get_api_config()
+    require_item_key(key)
+
+    item, headers = api_get_json(f"{prefix}/items/{key}", api_key)
+    version = headers.get("Last-Modified-Version", "0")
+    data = item.get("data", {})
+
+    changes = {}
+    if title:
+        changes["title"] = title
+    if date:
+        changes["date"] = date
+    if doi is not None:
+        changes["DOI"] = doi
+    if url is not None:
+        changes["url"] = url
+
+    current_tags = [tag["tag"] for tag in data.get("tags", [])]
+    tags_changed = False
+    if add_tags:
+        for tag in add_tags.split(","):
+            tag = tag.strip()
+            if tag and tag not in current_tags:
+                current_tags.append(tag)
+                tags_changed = True
+    if remove_tags:
+        for tag in remove_tags.split(","):
+            tag = tag.strip()
+            if tag in current_tags:
+                current_tags.remove(tag)
+                tags_changed = True
+    if tags_changed:
+        changes["tags"] = [{"tag": tag} for tag in current_tags]
+
+    if add_collection:
+        current_cols = list(data.get("collections", []))
+        if add_collection not in current_cols:
+            current_cols.append(add_collection)
+            changes["collections"] = current_cols
+
+    if not changes:
+        return {"status": "no_changes", "key": key, "changes": {}}
+
+    req_headers = {
+        "Zotero-API-Key": api_key,
+        "Zotero-API-Version": "3",
+        "Content-Type": "application/json",
+        "If-Unmodified-Since-Version": str(version),
+    }
+    req = urllib.request.Request(
+        f"{API_BASE}{prefix}/items/{key}",
+        data=json.dumps(changes).encode("utf-8"),
+        headers=req_headers,
+        method="PATCH",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30):
+            pass
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8") if e.fp else ""
+        detail = f"Update failed: {e.code} {e.reason}"
+        if err_body:
+            detail += f"\n{err_body[:500]}"
+        raise RuntimeError(detail) from e
+
+    return {"status": "updated", "key": key, "changes": changes}
+
+
+def op_export(format="bibtex", collection=None, output=None):
+    api_key, prefix = get_api_config()
+    path = f"{prefix}/collections/{collection}/items" if collection else f"{prefix}/items/top"
+    params = {"format": format, "limit": "100"}
+    chunks = []
+    start = 0
+    while True:
+        params["start"] = str(start)
+        body, headers = api_request(path, api_key, params=params)
+        if body.strip():
+            chunks.append(body)
+        total = int(headers.get("Total-Results", "0"))
+        start += 100
+        if start >= total:
+            break
+
+    text = "\n".join(chunks)
+    result = {"format": format, "collection": collection, "bytes": len(text)}
+    if output:
+        with open(output, "w", encoding="utf-8") as f:
+            f.write(text)
+        result["output"] = output
+    else:
+        result["text"] = text
+    return result
+
+
+def op_batch_add(file, id_type="doi", collection=None, tags=None, force=False, sleep_seconds=1):
+    get_api_config()
+    with open(file, "r", encoding="utf-8") as f:
+        identifiers = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
+
+    results = []
+    for identifier in identifiers:
+        try:
+            result = op_add_identifier(
+                identifier,
+                id_type=id_type,
+                collection=collection,
+                tags=tags,
+                force=force,
+            )
+        except RuntimeError as exc:
+            result = {
+                "status": "failed",
+                "identifier": identifier,
+                "idType": id_type,
+                "error": str(exc),
+            }
+        results.append(result)
+        if sleep_seconds:
+            time.sleep(sleep_seconds)
+
+    return {
+        "total": len(identifiers),
+        "added": sum(1 for item in results if item.get("status") == "added"),
+        "skipped": sum(1 for item in results if item.get("status") == "duplicate"),
+        "failed": sum(1 for item in results if item.get("status") == "failed"),
+        "results": results,
+    }
+
+
+def op_check_pdfs():
+    api_key, prefix = get_api_config()
+    all_items = paginate_all(f"{prefix}/items", api_key)
+
+    parents = {}
+    pdf_parents = set()
+    for item in all_items:
+        data = item["data"]
+        item_type = data.get("itemType", "")
+        if item_type == "attachment":
+            if data.get("contentType", "").startswith("application/pdf") and data.get("parentItem"):
+                pdf_parents.add(data["parentItem"])
+        elif item_type != "note":
+            parents[data["key"]] = item
+
+    with_pdf = [parents[key] for key in parents if key in pdf_parents]
+    without_pdf = [parents[key] for key in parents if key not in pdf_parents]
+    return {
+        "total": len(with_pdf) + len(without_pdf),
+        "with_pdf": len(with_pdf),
+        "without_pdf": len(without_pdf),
+        "missing": [
+            {"key": item["data"].get("key", ""), "title": item["data"].get("title", "")}
+            for item in without_pdf
+        ],
+    }
+
+
+def _extract_citations(text):
+    patterns = [
+        r"([A-Z][a-zé]+(?:\s+(?:et\s+al\.|&\s+[A-Z][a-zé]+))?)\s*\((\d{4})\)",
+        r"([A-Z][a-zé]+(?:\s+(?:et\s+al\.|,?\s+(?:and|&)\s+[A-Z][a-zé]+))?),?\s+(\d{4})",
+    ]
+    citations = set()
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            citations.add((match.group(1).strip().rstrip(","), match.group(2)))
+    return sorted(citations)
+
+
+def op_crossref(file):
+    api_key, prefix = get_api_config()
+    with open(file, "r", encoding="utf-8") as f:
+        text = f.read()
+
+    citations = _extract_citations(text)
+    if not citations:
+        return {"total": 0, "found": [], "missing": []}
+
+    items = paginate_all(f"{prefix}/items/top", api_key)
+    items = [item for item in items if item["data"].get("itemType") not in ("attachment", "note")]
+    lib_index = {}
+    for item in items:
+        data = item["data"]
+        year = _extract_year(data.get("date", "")) or ""
+        for creator in data.get("creators", []):
+            last = creator.get("lastName", creator.get("name", ""))
+            if last and year:
+                lib_index.setdefault((last.lower(), year), []).append(item)
+
+    found = []
+    missing = []
+    for author, year in citations:
+        key = (author.split()[0].lower().rstrip(","), year)
+        match_item = None
+        if key in lib_index:
+            match_item = lib_index[key][0]
+        else:
+            for (lib_author, lib_year), lib_items in lib_index.items():
+                if lib_year == year and (lib_author.startswith(key[0][:4]) or key[0].startswith(lib_author[:4])):
+                    match_item = lib_items[0]
+                    break
+        if match_item:
+            data = match_item["data"]
+            found.append(
+                {
+                    "author": author,
+                    "year": year,
+                    "key": data.get("key", ""),
+                    "title": data.get("title", ""),
+                }
+            )
+        else:
+            missing.append({"author": author, "year": year})
+
+    return {"total": len(citations), "found": found, "missing": missing}
+
+
+def op_find_dois(apply=False, limit=None, collection=None, sleep_seconds=1):
+    api_key, prefix = get_api_config()
+    path = f"{prefix}/collections/{collection}/items/top" if collection else f"{prefix}/items/top"
+    items = paginate_all(path, api_key)
+
+    candidates = []
+    skipped_has_doi = skipped_wrong_type = 0
+    for item in items:
+        data = item["data"]
+        item_type = data.get("itemType", "")
+        if item_type in DOI_EXCLUDED_ITEM_TYPES:
+            skipped_wrong_type += 1
+            continue
+        if data.get("DOI", "").strip():
+            skipped_has_doi += 1
+            continue
+        candidates.append(item)
+
+    if limit:
+        candidates = candidates[:limit]
+
+    results = []
+    matched = unmatched = written = write_failed = 0
+    for item in candidates:
+        data = item["data"]
+        title = data.get("title", "")
+        year = _extract_year(data.get("date", ""))
+        first_author = _first_author_last(data)
+        key = data.get("key", "?")
+        entry = {"key": key, "title": title, "year": year, "firstAuthor": first_author}
+        if not title:
+            unmatched += 1
+            entry["status"] = "unmatched"
+            results.append(entry)
+            continue
+
+        works = _crossref_search(title, first_author or "")
+        if sleep_seconds:
+            time.sleep(sleep_seconds)
+        best = None
+        for work in works:
+            match = _match_crossref_result(work, title, year, first_author)
+            if match:
+                best = match
+                break
+
+        if not best:
+            unmatched += 1
+            entry["status"] = "unmatched"
+            results.append(entry)
+            continue
+
+        doi, info = best
+        matched += 1
+        entry.update({"status": "matched", "doi": doi, "match": info})
+        if apply:
+            try:
+                version = item.get("version", item.get("data", {}).get("version", 0))
+                _patch_item_field(api_key, prefix, key, "DOI", doi, version)
+                written += 1
+                entry["written"] = True
+            except Exception as e:
+                write_failed += 1
+                entry["written"] = False
+                entry["writeError"] = str(e)
+        results.append(entry)
+
+    return {
+        "processed": len(candidates),
+        "matched": matched,
+        "unmatched": unmatched,
+        "alreadyHadDoi": skipped_has_doi,
+        "wrongItemType": skipped_wrong_type,
+        "apply": apply,
+        "written": written,
+        "writeFailed": write_failed,
+        "results": results,
+    }
+
+
+def op_fetch_pdfs(
+    key=None,
+    file=None,
+    title="Full Text PDF",
+    collection=None,
+    limit=None,
+    force=False,
+    sources=None,
+    download_dir="pdfs",
+    dry_run=False,
+    download_only=False,
+    link_only=False,
+):
+    if key or file:
+        if not (key and file):
+            raise RuntimeError("Error: local mode requires both --key and --file")
+        return op_attach_pdf(key, file, title=title)
+
+    api_key, prefix = get_api_config()
+    source_names = [s.strip().lower() for s in (sources or ",".join(PDF_SOURCES)).split(",") if s.strip()]
+    path = f"{prefix}/collections/{collection}/items/top" if collection else f"{prefix}/items/top"
+    items = paginate_all(path, api_key)
+    parents, pdf_parents = _bulk_find_pdf_parents(api_key, prefix, collection_key=collection)
+
+    candidates = []
+    for item in items:
+        data = item.get("data", {})
+        item_key = data.get("key")
+        if not item_key or item_key not in parents:
+            continue
+        if not data.get("DOI", "").strip():
+            continue
+        if item_key in pdf_parents and not force:
+            continue
+        candidates.append(item)
+
+    if limit:
+        candidates = candidates[:limit]
+
+    if not candidates:
+        return {
+            "processed": 0,
+            "downloaded": 0,
+            "attached": 0,
+            "linked": 0,
+            "failed": 0,
+            "results": [],
+        }
+
+    os.makedirs(download_dir, exist_ok=True)
+    summary = {"processed": 0, "downloaded": 0, "attached": 0, "linked": 0, "failed": 0}
+    results = []
+    for item in candidates:
+        summary["processed"] += 1
+        data = item["data"]
+        item_key = data["key"]
+        doi = data.get("DOI", "").strip()
+        entry = {"key": item_key, "title": data.get("title", "untitled"), "doi": doi}
+        source_info = _find_pdf_source(doi, source_names)
+        if not source_info:
+            summary["failed"] += 1
+            entry["status"] = "no_source"
+            results.append(entry)
+            continue
+
+        pdf_url, source_url, source_name = source_info
+        filename = _make_pdf_filename(data, item_key)
+        local_path = os.path.join(download_dir, filename)
+        entry.update({"source": source_name, "pdfUrl": pdf_url, "sourceUrl": source_url, "localPath": local_path})
+
+        if dry_run:
+            entry["status"] = "dry_run"
+            results.append(entry)
+            continue
+
+        if not _download_pdf(pdf_url, local_path):
+            summary["failed"] += 1
+            entry["status"] = "download_failed"
+            results.append(entry)
+            continue
+        summary["downloaded"] += 1
+
+        if download_only:
+            entry["status"] = "downloaded"
+            results.append(entry)
+            continue
+
+        if link_only:
+            ok = _create_linked_url_attachment(api_key, prefix, item_key, title, source_url)
+            if ok:
+                summary["linked"] += 1
+                entry["status"] = "linked"
+            else:
+                summary["failed"] += 1
+                entry["status"] = "link_failed"
+            results.append(entry)
+            continue
+
+        ok = _upload_pdf_to_zotero(api_key, prefix, item_key, local_path, filename)
+        if ok:
+            summary["attached"] += 1
+            entry["status"] = "attached"
+        else:
+            summary["failed"] += 1
+            entry["status"] = "upload_failed"
+        results.append(entry)
+
+    summary["results"] = results
+    return summary
+
+
 def cmd_ping(_args):
     result = op_ping()
     if _json_mode:
@@ -1280,407 +1832,167 @@ def cmd_arxiv(args):
 
 
 def cmd_delete(args):
-    require_debug_bridge()
     if args.permanent and args.trash:
         print("Error: --permanent and --trash are mutually exclusive", file=sys.stderr)
         sys.exit(1)
     permanent = bool(args.permanent)
-
-    for key in args.keys:
-        if not validate_item_key(key):
-            continue
-        item = db_get_item(key)
-        if not item:
-            print(f"Item {key} not found", file=sys.stderr)
-            continue
-
-        title = item.get("title", "Untitled")
+    keys = []
+    if not args.yes:
+        require_debug_bridge()
         mode = "permanently delete" if permanent else "move to trash"
-        if not args.yes:
-            print(f"[{key}] {title}")
-            confirm = input(f"{mode.capitalize()}? [y/N] ").strip().lower()
-            if confirm != "y":
-                print("Skipped.")
-                continue
+        for key in args.keys:
+            item = db_get_item(key)
+            title = item.get("title", "Untitled") if item else "Missing item"
+            if not args.yes:
+                print(f"[{key}] {title}")
+                confirm = input(f"{mode.capitalize()}? [y/N] ").strip().lower()
+                if confirm != "y":
+                    print("Skipped.")
+                    continue
+            keys.append(key)
+    else:
+        keys = args.keys
 
-        result = db_delete_item(key, permanent=permanent)
-        if result.get("success"):
-            print(f"OK: {title} [{key}] ({result.get('mode', 'unknown')})")
-        else:
-            print(f"Failed: {result.get('error', 'Unknown error')}", file=sys.stderr)
+    result = op_delete_items(keys, permanent=permanent)
+    if _json_mode:
+        _json_print(result)
+        return
+    for item in result["invalid"]:
+        print(f"Invalid item key: '{item['key']}'. Must be 8 alphanumeric characters.", file=sys.stderr)
+    for item in result["missing"]:
+        print(f"Item {item['key']} not found", file=sys.stderr)
+    for item in result["deleted"]:
+        print(f"OK: {item['title']} [{item['key']}] ({item.get('mode', 'unknown')})")
+    for item in result["failed"]:
+        print(f"Failed: {item.get('error', 'Unknown error')}", file=sys.stderr)
 
 
 def cmd_add_identifier(args):
-    api_key, prefix = get_api_config()
-    identifier = args.identifier
-    id_type = args.id_type
-
-    if id_type == "doi" and not validate_doi(identifier):
-        return "failed"
-    if id_type == "isbn" and not validate_isbn(identifier):
-        return "failed"
-
-    if id_type == "doi":
-        lookup_url = f"https://doi.org/{identifier}"
-    elif id_type == "isbn":
-        lookup_url = f"https://www.worldcat.org/isbn/{identifier}"
-    elif id_type == "pmid":
-        lookup_url = f"https://pubmed.ncbi.nlm.nih.gov/{identifier}/"
-    else:
-        print(f"Unknown identifier type: {id_type}", file=sys.stderr)
-        return "failed"
-
-    translate_data = json.dumps({"url": lookup_url, "sessionid": "zotero-cli"}).encode("utf-8")
-    translate_req = urllib.request.Request("https://translate.zotero.org/web", data=translate_data, headers={"Content-Type": "application/json"}, method="POST")
-
-    try:
-        with urllib.request.urlopen(translate_req, timeout=30) as resp:
-            translated = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        if id_type == "doi":
-            translated = _doi_to_item(identifier)
-            if not translated:
-                return "failed"
-        else:
-            print(f"Translation failed: {e.code} {e.reason}", file=sys.stderr)
-            return "failed"
-    except Exception as e:
-        print(f"Translation failed: {e}", file=sys.stderr)
-        return "failed"
-
-    if not translated:
-        print("No metadata found for this identifier.", file=sys.stderr)
-        return "failed"
-
-    new_items = translated[:1] if isinstance(translated, list) else [translated]
-
-    if not getattr(args, "force", False):
-        existing = _check_duplicate_by_metadata(api_key, prefix, new_items[0], identifier, id_type)
-        if existing:
-            print(f"Already in library: {fmt_item_short(existing)}")
-            print("Use --force to add anyway.")
-            return "duplicate"
-
-    for item in new_items:
-        for field in ["key", "version", "dateAdded", "dateModified", "relations"]:
-            item.pop(field, None)
-        if args.collection:
-            item["collections"] = [args.collection]
-        if args.tags:
-            existing_tags = item.get("tags", [])
-            for tag in args.tags.split(","):
-                existing_tags.append({"tag": tag.strip()})
-            item["tags"] = existing_tags
-
-    body, _ = api_request(f"{prefix}/items", api_key, method="POST", data=new_items, content_type="application/json")
-    result = json.loads(body) if body.strip() else {}
-
-    success = result.get("successful", {})
-    failed = result.get("failed", {})
-    for item in success.values():
-        print(f"Added: {item['data'].get('title', 'untitled')} [{item['key']}]")
-    for err in failed.values():
-        print(f"Failed: {err.get('message', 'unknown error')}", file=sys.stderr)
-    if failed:
-        return "failed"
-    return "added"
+    result = op_add_identifier(
+        args.identifier,
+        id_type=args.id_type,
+        collection=args.collection,
+        tags=args.tags,
+        force=getattr(args, "force", False),
+    )
+    if _json_mode:
+        _json_print(result)
+        return result["status"]
+    if result["status"] == "duplicate":
+        print(f"Already in library: {result['existing']['summary']}")
+        print("Use --force to add anyway.")
+    elif result["status"] == "added":
+        for item in result["successful"]:
+            print(f"Added: {item.get('title', 'untitled')} [{item.get('key', '')}]")
+    elif result["status"] == "failed":
+        for item in result.get("failed", []):
+            print(f"Failed: {item.get('message', 'unknown error')}", file=sys.stderr)
+    return result["status"]
 
 
 def cmd_update(args):
-    api_key, prefix = get_api_config()
-    if not validate_item_key(args.key):
-        sys.exit(1)
-
-    item, headers = api_get_json(f"{prefix}/items/{args.key}", api_key)
-    version = headers.get("Last-Modified-Version", "0")
-    d = item.get("data", {})
-
-    changes = {}
-    if args.title:
-        changes["title"] = args.title
-    if args.date:
-        changes["date"] = args.date
-    if args.doi is not None:
-        changes["DOI"] = args.doi
-    if args.url is not None:
-        changes["url"] = args.url
-
-    current_tags = [t["tag"] for t in d.get("tags", [])]
-    tags_changed = False
-    if args.add_tags:
-        for tag in args.add_tags.split(","):
-            tag = tag.strip()
-            if tag and tag not in current_tags:
-                current_tags.append(tag)
-                tags_changed = True
-    if args.remove_tags:
-        for tag in args.remove_tags.split(","):
-            tag = tag.strip()
-            if tag in current_tags:
-                current_tags.remove(tag)
-                tags_changed = True
-    if tags_changed:
-        changes["tags"] = [{"tag": t} for t in current_tags]
-
-    if args.add_collection:
-        current_cols = list(d.get("collections", []))
-        if args.add_collection not in current_cols:
-            current_cols.append(args.add_collection)
-            changes["collections"] = current_cols
-
-    if not changes:
+    result = op_update_item(
+        args.key,
+        title=args.title,
+        date=args.date,
+        doi=args.doi,
+        url=args.url,
+        add_tags=args.add_tags,
+        remove_tags=args.remove_tags,
+        add_collection=args.add_collection,
+    )
+    if _json_mode:
+        _json_print(result)
+        return
+    if result["status"] == "no_changes":
         print("No changes specified.")
         return
-
-    req_headers = {
-        "Zotero-API-Key": api_key,
-        "Zotero-API-Version": "3",
-        "Content-Type": "application/json",
-        "If-Unmodified-Since-Version": str(version),
-    }
-    req = urllib.request.Request(
-        f"{API_BASE}{prefix}/items/{args.key}",
-        data=json.dumps(changes).encode("utf-8"),
-        headers=req_headers,
-        method="PATCH",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30):
-            pass
-        print("Updated successfully.")
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8") if e.fp else ""
-        print(f"Update failed: {e.code} {e.reason}", file=sys.stderr)
-        if err_body:
-            print(err_body[:500], file=sys.stderr)
+    print("Updated successfully.")
 
 
 def cmd_export(args):
-    api_key, prefix = get_api_config()
-    path = f"{prefix}/collections/{args.collection}/items" if args.collection else f"{prefix}/items/top"
-
-    params = {"format": args.format, "limit": "100"}
-    out = []
-    start = 0
-    while True:
-        params["start"] = str(start)
-        body, headers = api_request(path, api_key, params=params)
-        if body.strip():
-            out.append(body)
-        total = int(headers.get("Total-Results", "0"))
-        start += 100
-        if start >= total:
-            break
-
-    result = "\n".join(out)
+    result = op_export(format=args.format, collection=args.collection, output=args.output)
+    if _json_mode:
+        output = dict(result)
+        if "text" in output:
+            output["text"] = output["text"]
+        _json_print(output)
+        return
     if args.output:
-        with open(args.output, "w", encoding="utf-8") as f:
-            f.write(result)
-        print(f"Exported to {args.output} ({len(result)} bytes)")
+        print(f"Exported to {args.output} ({result['bytes']} bytes)")
     else:
-        print(result)
+        print(result["text"])
 
 
 def cmd_batch_add(args):
-    get_api_config()  # fail fast for missing API env
-    with open(args.file, "r", encoding="utf-8") as f:
-        identifiers = [line.strip() for line in f if line.strip() and not line.strip().startswith("#")]
-
-    if not identifiers:
+    result = op_batch_add(
+        args.file,
+        id_type=args.type,
+        collection=args.collection,
+        tags=args.tags,
+        force=args.force,
+    )
+    if _json_mode:
+        _json_print(result)
+        return
+    if not result["total"]:
         print("No identifiers found in file.")
         return
-
-    added = skipped = failed = 0
-    for i, ident in enumerate(identifiers, 1):
-        print(f"[{i}/{len(identifiers)}] {ident}")
-
-        class FakeArgs:
-            pass
-
-        fake = FakeArgs()
-        fake.identifier = ident
-        fake.id_type = args.type
-        fake.collection = args.collection
-        fake.tags = args.tags
-        fake.force = args.force
-
-        try:
-            result = cmd_add_identifier(fake)
-            if result == "added":
-                added += 1
-            elif result == "duplicate":
-                skipped += 1
-            else:
-                failed += 1
-        except SystemExit:
-            failed += 1
-        time.sleep(1)
-
-    print(f"Added: {added}")
-    print(f"Skipped: {skipped}")
-    print(f"Failed: {failed}")
+    for index, item in enumerate(result["results"], 1):
+        print(f"[{index}/{result['total']}] {item.get('identifier', '')}")
+    print(f"Added: {result['added']}")
+    print(f"Skipped: {result['skipped']}")
+    print(f"Failed: {result['failed']}")
 
 
 def cmd_check_pdfs(_args):
-    api_key, prefix = get_api_config()
-    all_items = paginate_all(f"{prefix}/items", api_key)
-
-    parents = {}
-    pdf_parents = set()
-    for item in all_items:
-        d = item["data"]
-        itype = d.get("itemType", "")
-        if itype == "attachment":
-            if d.get("contentType", "").startswith("application/pdf") and d.get("parentItem"):
-                pdf_parents.add(d["parentItem"])
-        elif itype != "note":
-            parents[d["key"]] = item
-
-    with_pdf = [parents[k] for k in parents if k in pdf_parents]
-    without_pdf = [parents[k] for k in parents if k not in pdf_parents]
-
+    result = op_check_pdfs()
     if _json_mode:
-        _json_print({
-            "total": len(with_pdf) + len(without_pdf),
-            "with_pdf": len(with_pdf),
-            "without_pdf": len(without_pdf),
-            "missing": [
-                {"key": it["data"].get("key", ""), "title": it["data"].get("title", "")}
-                for it in without_pdf
-            ],
-        })
+        _json_print(result)
         return
-
     print("PDF Attachment Report")
-    print(f"Total items: {len(with_pdf) + len(without_pdf)}")
-    print(f"With PDF:    {len(with_pdf)}")
-    print(f"Without PDF: {len(without_pdf)}")
-    if without_pdf:
+    print(f"Total items: {result['total']}")
+    print(f"With PDF:    {result['with_pdf']}")
+    print(f"Without PDF: {result['without_pdf']}")
+    if result["missing"]:
         print("\nItems missing PDFs:")
-        for item in without_pdf:
-            print(f"  {fmt_item_short(item)}")
+        for item in result["missing"]:
+            print(f"  [{item['key']}] {item['title']}")
 
 
 def cmd_crossref(args):
-    api_key, prefix = get_api_config()
-    with open(args.file, "r", encoding="utf-8") as f:
-        text = f.read()
-
-    patterns = [
-        r"([A-Z][a-zé]+(?:\s+(?:et\s+al\.|&\s+[A-Z][a-zé]+))?)\s*\((\d{4})\)",
-        r"([A-Z][a-zé]+(?:\s+(?:et\s+al\.|,?\s+(?:and|&)\s+[A-Z][a-zé]+))?),?\s+(\d{4})",
-    ]
-    citations = set()
-    for pattern in patterns:
-        for match in re.finditer(pattern, text):
-            citations.add((match.group(1).strip().rstrip(","), match.group(2)))
-
-    if not citations:
+    result = op_crossref(args.file)
+    if _json_mode:
+        _json_print(result)
+        return
+    if not result["total"]:
         print("No citations found in file. Expected format: Author (Year)")
         return
-
-    items = paginate_all(f"{prefix}/items/top", api_key)
-    items = [i for i in items if i["data"].get("itemType") not in ("attachment", "note")]
-
-    lib_index = {}
-    for item in items:
-        d = item["data"]
-        year = _extract_year(d.get("date", "")) or ""
-        for c in d.get("creators", []):
-            last = c.get("lastName", c.get("name", ""))
-            if last and year:
-                lib_index.setdefault((last.lower(), year), []).append(item)
-
-    found = []
-    missing = []
-    for author, year in sorted(citations):
-        key = (author.split()[0].lower().rstrip(","), year)
-        if key in lib_index:
-            found.append((author, year, lib_index[key][0]))
-        else:
-            match_item = None
-            for (lib_author, lib_year), lib_items in lib_index.items():
-                if lib_year == year and (lib_author.startswith(key[0][:4]) or key[0].startswith(lib_author[:4])):
-                    match_item = lib_items[0]
-                    break
-            if match_item:
-                found.append((author, year, match_item))
-            else:
-                missing.append((author, year))
-
-    print(f"Citations in file: {len(citations)}")
-    print(f"Found in library:  {len(found)}")
-    print(f"Missing:           {len(missing)}")
+    print(f"Citations in file: {result['total']}")
+    print(f"Found in library:  {len(result['found'])}")
+    print(f"Missing:           {len(result['missing'])}")
 
 
 def cmd_find_dois(args):
-    api_key, prefix = get_api_config()
-    apply_mode = args.apply
-
-    items = paginate_all(f"{prefix}/collections/{args.collection}/items/top", api_key) if args.collection else paginate_all(f"{prefix}/items/top", api_key)
-
-    candidates = []
-    skipped_has_doi = skipped_wrong_type = 0
-    for item in items:
-        d = item["data"]
-        itype = d.get("itemType", "")
-        if itype in DOI_EXCLUDED_ITEM_TYPES:
-            skipped_wrong_type += 1
-            continue
-        if d.get("DOI", "").strip():
-            skipped_has_doi += 1
-            continue
-        candidates.append(item)
-
-    if args.limit:
-        candidates = candidates[: args.limit]
-
-    print(f"Found {len(candidates)} items missing DOIs")
-    if not candidates:
+    result = op_find_dois(apply=args.apply, limit=args.limit, collection=args.collection)
+    if _json_mode:
+        _json_print(result)
         return
-
-    matched = unmatched = 0
-    for i, item in enumerate(candidates, 1):
-        d = item["data"]
-        title = d.get("title", "")
-        year = _extract_year(d.get("date", ""))
-        first_author = _first_author_last(d)
-        key = d.get("key", "?")
-
-        print(f"[{i}/{len(candidates)}] {fmt_item_short(item)}")
-        if not title:
-            unmatched += 1
-            continue
-
-        works = _crossref_search(title, first_author or "")
-        time.sleep(1)
-        best = None
-        for work in works:
-            result = _match_crossref_result(work, title, year, first_author)
-            if result:
-                best = result
-                break
-
-        if best:
-            doi, info = best
-            print(f"  Match: {doi} (title similarity: {info['similarity']}%)")
-            matched += 1
-            if apply_mode:
-                try:
-                    version = item.get("version", item.get("data", {}).get("version", 0))
-                    _patch_item_field(api_key, prefix, key, "DOI", doi, version)
-                    print("  DOI written")
-                except Exception as e:
-                    print(f"  Failed to write DOI: {e}", file=sys.stderr)
-        else:
-            unmatched += 1
-
-    print(f"Processed: {len(candidates)}")
-    print(f"Matched: {matched}")
-    print(f"Unmatched: {unmatched}")
-    print(f"Already had DOI: {skipped_has_doi}")
-    print(f"Wrong item type: {skipped_wrong_type}")
-    if matched and not apply_mode:
+    print(f"Found {result['processed']} items missing DOIs")
+    for index, item in enumerate(result["results"], 1):
+        print(f"[{index}/{result['processed']}] [{item['key']}] {item.get('title', '')[:80]}")
+        if item["status"] == "matched":
+            print(f"  Match: {item['doi']} (title similarity: {item['match']['similarity']}%)")
+            if item.get("written"):
+                print("  DOI written")
+            elif item.get("writeError"):
+                print(f"  Failed to write DOI: {item['writeError']}", file=sys.stderr)
+    print(f"Processed: {result['processed']}")
+    print(f"Matched: {result['matched']}")
+    print(f"Unmatched: {result['unmatched']}")
+    print(f"Already had DOI: {result['alreadyHadDoi']}")
+    print(f"Wrong item type: {result['wrongItemType']}")
+    if result["matched"] and not args.apply:
         print("Dry run mode. Use --apply to write DOIs.")
 
 
@@ -1689,106 +2001,55 @@ def cmd_fetch_pdfs(args):
     1) Local attach mode (debug bridge): --key + --file
     2) Remote OA fetch mode (Web API): scans items by DOI and attaches PDFs
     """
-    # Local attach mode
+    result = op_fetch_pdfs(
+        key=args.key,
+        file=args.file,
+        title=args.title,
+        collection=args.collection,
+        limit=args.limit,
+        force=args.force,
+        sources=args.sources,
+        download_dir=args.download_dir,
+        dry_run=args.dry_run,
+        download_only=args.download_only,
+        link_only=args.link_only,
+    )
+    if _json_mode:
+        _json_print(result)
+        return
     if args.key or args.file:
-        if not (args.key and args.file):
-            print("Error: local mode requires both --key and --file", file=sys.stderr)
-            sys.exit(1)
-        require_debug_bridge()
-        if not validate_item_key(args.key):
-            sys.exit(1)
-        result = db_add_attachment(args.key, args.file, title=args.title)
-        if result.get("success"):
+        if result.get("attachment_key"):
             print(f"Attached: {args.file} -> [{args.key}]")
         else:
-            print(f"Attach failed: {result.get('error', 'Unknown error')}", file=sys.stderr)
-            sys.exit(1)
+            print("Attach failed", file=sys.stderr)
         return
-
-    # Remote OA fetch mode
-    api_key, prefix = get_api_config()
-    sources = [s.strip().lower() for s in (args.sources or ",".join(PDF_SOURCES)).split(",") if s.strip()]
-    items = paginate_all(f"{prefix}/collections/{args.collection}/items/top", api_key) if args.collection else paginate_all(f"{prefix}/items/top", api_key)
-
-    parents, pdf_parents = _bulk_find_pdf_parents(api_key, prefix, collection_key=args.collection)
-
-    candidates = []
-    for item in items:
-        d = item.get("data", {})
-        key = d.get("key")
-        if not key or key not in parents:
-            continue
-        if not d.get("DOI", "").strip():
-            continue
-        if key in pdf_parents and not args.force:
-            continue
-        candidates.append(item)
-
-    if args.limit:
-        candidates = candidates[: args.limit]
-
-    if not candidates:
+    if not result["processed"]:
         print("No candidate items to fetch PDFs for.")
         return
-
-    os.makedirs(args.download_dir, exist_ok=True)
-
-    processed = attached = linked = downloaded = failed = 0
-    for i, item in enumerate(candidates, 1):
-        processed += 1
-        d = item["data"]
-        key = d["key"]
-        doi = d.get("DOI", "").strip()
-        print(f"[{i}/{len(candidates)}] [{key}] {d.get('title', 'untitled')[:70]}")
-
-        source_info = _find_pdf_source(doi, sources)
-        if not source_info:
+    for index, item in enumerate(result["results"], 1):
+        print(f"[{index}/{result['processed']}] [{item['key']}] {item.get('title', 'untitled')[:70]}")
+        if item["status"] == "no_source":
             print("  No OA PDF source found")
-            failed += 1
-            continue
-
-        pdf_url, source_url, source_name = source_info
-        filename = _make_pdf_filename(d, key)
-        local_path = os.path.join(args.download_dir, filename)
-
-        if args.dry_run:
-            print(f"  DRY-RUN {source_name}: {pdf_url}")
-            continue
-
-        if not _download_pdf(pdf_url, local_path):
-            print(f"  Download failed: {pdf_url}")
-            failed += 1
-            continue
-        downloaded += 1
-
-        if args.download_only:
-            print(f"  Saved: {local_path}")
-            continue
-
-        if args.link_only:
-            ok = _create_linked_url_attachment(api_key, prefix, key, args.title, source_url)
-            if ok:
-                linked += 1
-                print(f"  Linked URL attachment ({source_name})")
-            else:
-                failed += 1
-                print("  Failed to create linked URL attachment")
-            continue
-
-        ok = _upload_pdf_to_zotero(api_key, prefix, key, local_path, filename)
-        if ok:
-            attached += 1
-            print(f"  Uploaded PDF ({source_name})")
-        else:
-            failed += 1
+        elif item["status"] == "dry_run":
+            print(f"  DRY-RUN {item['source']}: {item['pdfUrl']}")
+        elif item["status"] == "download_failed":
+            print(f"  Download failed: {item['pdfUrl']}")
+        elif item["status"] == "downloaded":
+            print(f"  Saved: {item['localPath']}")
+        elif item["status"] == "linked":
+            print(f"  Linked URL attachment ({item['source']})")
+        elif item["status"] == "link_failed":
+            print("  Failed to create linked URL attachment")
+        elif item["status"] == "attached":
+            print(f"  Uploaded PDF ({item['source']})")
+        elif item["status"] == "upload_failed":
             print("  Upload failed")
-
     print("\nfetch-pdfs summary")
-    print(f"Processed: {processed}")
-    print(f"Downloaded: {downloaded}")
-    print(f"Attached(uploaded): {attached}")
-    print(f"Linked URL: {linked}")
-    print(f"Failed: {failed}")
+    print(f"Processed: {result['processed']}")
+    print(f"Downloaded: {result['downloaded']}")
+    print(f"Attached(uploaded): {result['attached']}")
+    print(f"Linked URL: {result['linked']}")
+    print(f"Failed: {result['failed']}")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1961,7 +2222,10 @@ def main():
     try:
         dispatch(args)
     except RuntimeError as e:
-        print(str(e), file=sys.stderr)
+        if _json_mode:
+            _json_error(str(e), getattr(e, "code", 0))
+        else:
+            print(str(e), file=sys.stderr)
         sys.exit(1)
 
 
