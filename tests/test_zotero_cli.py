@@ -16,7 +16,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 def load_module():
     sys.path.insert(0, str(ROOT))
-    return __import__("zotero_mcp.cli", fromlist=["cli"])
+    return __import__("zotero_mcp.operations", fromlist=["operations"])
 
 
 class ZoteroCLITest(unittest.TestCase):

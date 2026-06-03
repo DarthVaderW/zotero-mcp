@@ -1,9 +1,10 @@
 # Client Integration Notes
 
-This repository contains a packaged Zotero CLI implementation and a Zotero MCP
-server. The MCP server calls structured Zotero operations directly while the CLI
-keeps human-readable text output as presentation only. This component page keeps
-the current client-specific setup self-contained.
+This repository contains a packaged Zotero MCP server plus a helper CLI. The MCP
+server and CLI both call `zotero_mcp/operations.py`; the CLI keeps
+human-readable text output as presentation only. Debug Bridge, Web API, and
+validation helpers live in separate modules. This component page keeps the
+current client-specific setup self-contained.
 
 ## Prerequisite
 

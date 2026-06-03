@@ -13,7 +13,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zotero_mcp import cli, server
+from zotero_mcp import operations, server, web_api
 
 
 class ZoteroServerOperationsTest(unittest.TestCase):
@@ -21,8 +21,8 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         fake_items = [{"key": "ABC12345", "title": "Result"}]
 
         with (
-            mock.patch.object(cli, "ensure_debug_bridge", return_value=None),
-            mock.patch.object(cli, "db_search", return_value=fake_items) as db_search,
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "db_search", return_value=fake_items) as db_search,
         ):
             result = server.zotero_search_items("needle", limit=3)
 
@@ -33,9 +33,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         item = {"key": "ABC12345", "title": "A title"}
 
         with (
-            mock.patch.object(cli, "ensure_debug_bridge", return_value=None),
-            mock.patch.object(cli, "db_get_item", return_value=item),
-            mock.patch.object(cli, "db_delete_item", return_value={"success": True, "mode": "trash"}),
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "db_get_item", return_value=item),
+            mock.patch.object(operations, "db_delete_item", return_value={"success": True, "mode": "trash"}),
         ):
             result = server.zotero_delete_items(["ABC12345"])
 
@@ -71,9 +71,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             None,
         )
 
-        with mock.patch.object(cli.urllib.request, "urlopen", side_effect=error):
-            with self.assertRaises(cli.CommandError) as ctx:
-                cli.api_request("/users/1/items", "api-key")
+        with mock.patch.object(web_api.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(operations.CommandError) as ctx:
+                operations.api_request("/users/1/items", "api-key")
 
         self.assertEqual(ctx.exception.code, 403)
         self.assertIn("API Error 403", str(ctx.exception))

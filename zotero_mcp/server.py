@@ -5,7 +5,7 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from zotero_mcp.cli import (
+from zotero_mcp.operations import (
     op_add_identifier,
     op_arxiv,
     op_attach_pdf,
