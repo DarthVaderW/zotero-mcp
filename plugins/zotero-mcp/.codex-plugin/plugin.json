@@ -1,6 +1,6 @@
 {
   "name": "zotero-mcp",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "Zotero MCP server template for Codex.",
   "author": {
     "name": "Haotian Wang",
