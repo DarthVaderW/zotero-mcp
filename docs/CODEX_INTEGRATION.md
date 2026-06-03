@@ -5,8 +5,9 @@ server and CLI both call structured operation entrypoints in
 `zotero_mcp/operations.py`; the CLI keeps human-readable text output as
 presentation only. Debug Bridge transport, local write helpers, arXiv import,
 identifier translation, PDF discovery, Web API transport, metadata helpers, and
-validation live in separate modules. This component page keeps the current
-client-specific setup self-contained.
+validation live in separate modules. Web API item updates/exports and CrossRef
+DOI checks are also separated from the local Debug Bridge operations. This
+component page keeps the current client-specific setup self-contained.
 
 ## Prerequisite
 
