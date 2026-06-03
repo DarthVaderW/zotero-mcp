@@ -13,7 +13,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zotero_mcp import debug_bridge, operations, server, web_api
+from zotero_mcp import arxiv, debug_bridge, operations, server, web_api
 
 
 class ZoteroServerOperationsTest(unittest.TestCase):
@@ -110,12 +110,12 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(operations, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)),
-            mock.patch.object(operations, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)),
-            mock.patch.object(operations, "create_item", return_value="ABC12345"),
-            mock.patch.object(operations, "db_add_snapshot", return_value="SNAP1234") as add_snapshot,
-            mock.patch.object(operations, "_download_pdf", return_value=True),
-            mock.patch.object(operations, "attach_pdf_from_file", return_value="ATT12345"),
+            mock.patch.object(arxiv, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)),
+            mock.patch.object(arxiv, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)),
+            mock.patch.object(arxiv, "create_item", return_value="ABC12345"),
+            mock.patch.object(arxiv, "db_add_snapshot", return_value="SNAP1234") as add_snapshot,
+            mock.patch.object(arxiv, "_download_pdf", return_value=True),
+            mock.patch.object(arxiv, "attach_pdf_from_file", return_value="ATT12345"),
         ):
             result = operations.import_arxiv("2401.01234")
 

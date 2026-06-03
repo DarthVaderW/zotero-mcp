@@ -14,15 +14,16 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 
-def load_module():
+def load_module(module_name):
     sys.path.insert(0, str(ROOT))
-    return __import__("zotero_mcp.operations", fromlist=["operations"])
+    return __import__(module_name, fromlist=[module_name.rsplit(".", 1)[-1]])
 
 
 class ZoteroCLITest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.mod = load_module()
+        cls.mod = load_module("zotero_mcp.operations")
+        cls.local_ops = load_module("zotero_mcp.local_ops")
 
     def run_cli(self, *args):
         proc = subprocess.run(
@@ -66,13 +67,13 @@ class ZoteroCLITest(unittest.TestCase):
 
     def test_create_item_preserves_zotero_fields(self):
         captured = {}
-        original = self.mod.db_create_item
+        original = self.local_ops.db_create_item
 
         def fake_create_item(payload):
             captured.update(payload)
             return {"success": True, "key": "ABC12345"}
 
-        self.mod.db_create_item = fake_create_item
+        self.local_ops.db_create_item = fake_create_item
         try:
             key = self.mod.create_item(
                 {
@@ -85,7 +86,7 @@ class ZoteroCLITest(unittest.TestCase):
                 }
             )
         finally:
-            self.mod.db_create_item = original
+            self.local_ops.db_create_item = original
 
         self.assertEqual(key, "ABC12345")
         self.assertEqual(captured["itemType"], "book")
