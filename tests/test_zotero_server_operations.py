@@ -13,7 +13,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zotero_mcp import arxiv, debug_bridge, operations, server, web_api
+from zotero_mcp import arxiv, debug_bridge, operations, pdf_discovery, server, web_api
 
 
 class ZoteroServerOperationsTest(unittest.TestCase):
@@ -121,6 +121,17 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
         add_snapshot.assert_called_once_with("ABC12345", "https://arxiv.org/abs/2401.01234")
         self.assertEqual(result["snapshot_key"], "SNAP1234")
+
+    def test_fetch_pdfs_local_mode_preserves_debug_bridge_guard(self):
+        with (
+            mock.patch.object(pdf_discovery, "ensure_debug_bridge", return_value=None) as ensure_bridge,
+            mock.patch.object(pdf_discovery, "attach_pdf_from_file", return_value="ATT12345") as attach_pdf,
+        ):
+            result = pdf_discovery.op_fetch_pdfs(key="ABC12345", file="/tmp/paper.pdf")
+
+        ensure_bridge.assert_called_once_with()
+        attach_pdf.assert_called_once_with("ABC12345", "/tmp/paper.pdf", title="Full Text PDF")
+        self.assertEqual(result, {"attachment_key": "ATT12345"})
 
     def test_server_web_api_tools_call_structured_operations(self):
         with mock.patch.object(server, "op_check_pdfs", return_value={"total": 0}) as op_check:

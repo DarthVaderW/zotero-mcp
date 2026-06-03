@@ -4,8 +4,9 @@ This repository contains a packaged Zotero MCP server plus a helper CLI. The MCP
 server and CLI both call structured operation entrypoints in
 `zotero_mcp/operations.py`; the CLI keeps human-readable text output as
 presentation only. Debug Bridge transport, local write helpers, arXiv import,
-PDF download helpers, Web API, and validation live in separate modules. This
-component page keeps the current client-specific setup self-contained.
+identifier translation, PDF discovery, Web API transport, metadata helpers, and
+validation live in separate modules. This component page keeps the current
+client-specific setup self-contained.
 
 ## Prerequisite
 

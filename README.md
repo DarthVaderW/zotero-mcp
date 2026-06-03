@@ -10,6 +10,9 @@ General-purpose Zotero MCP server and helper CLI.
 - `zotero_mcp/local_ops.py`: local Debug Bridge create/attach operations.
 - `zotero_mcp/arxiv.py`: arXiv metadata import workflow.
 - `zotero_mcp/pdfs.py`: shared PDF download helpers.
+- `zotero_mcp/identifiers.py`: DOI/ISBN/PMID translation and add/batch-add operations.
+- `zotero_mcp/pdf_discovery.py`: remote PDF discovery and Zotero Web API attachment upload/linking.
+- `zotero_mcp/metadata.py`: shared metadata formatting and matching helpers.
 - `zotero_mcp/debug_bridge.py`: local Zotero Debug Bridge transport and data helpers.
 - `zotero_mcp/web_api.py`: Zotero Web API requests, pagination, and retry handling.
 - `zotero_mcp/validators.py`: identifier and payload validation helpers.
