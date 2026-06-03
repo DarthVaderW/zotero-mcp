@@ -20,7 +20,7 @@ class ZoteroServerRuntimeTest(unittest.TestCase):
         fake_items = [{"key": "ABC12345", "title": "Result"}]
 
         with (
-            mock.patch.object(runtime.cli, "require_debug_bridge", return_value=None),
+            mock.patch.object(runtime.cli, "ensure_debug_bridge", return_value=None),
             mock.patch.object(runtime.cli, "db_search", return_value=fake_items) as db_search,
         ):
             result = server.run_zotero(["search", "needle", "--limit", "3"])
@@ -44,13 +44,21 @@ class ZoteroServerRuntimeTest(unittest.TestCase):
         self.assertIn("OK: A title [ABC12345] (trash)", result["stdout"])
         self.assertEqual(result["stderr"], "")
 
-    def test_server_preserves_root_relative_file_paths(self):
-        with mock.patch.object(server, "run_zotero") as run_zotero:
-            server.zotero_attach_pdf("ABC12345", "paper.pdf")
+    def test_server_search_calls_structured_operation(self):
+        expected = {"total": 1, "items": [{"key": "ABC12345"}]}
 
-        run_zotero.assert_called_once_with(
-            ["attach-pdf", "--key", "ABC12345", "--file", str(server.ROOT / "paper.pdf")]
-        )
+        with mock.patch.object(server, "op_search", return_value=expected) as op_search:
+            result = server.zotero_search_items("needle", limit=3)
+
+        op_search.assert_called_once_with("needle", limit=3)
+        self.assertEqual(result, expected)
+
+    def test_server_preserves_root_relative_file_paths(self):
+        with mock.patch.object(server, "op_attach_pdf", return_value={"attachment_key": "ATT12345"}) as op_attach:
+            result = server.zotero_attach_pdf("ABC12345", "paper.pdf")
+
+        op_attach.assert_called_once_with("ABC12345", str(server.ROOT / "paper.pdf"))
+        self.assertEqual(result, {"attachment_key": "ATT12345"})
 
     def test_nonzero_command_exit_raises_runtime_error(self):
         with self.assertRaisesRegex(RuntimeError, "ZOTERO_DEBUG_BRIDGE_TOKEN"):

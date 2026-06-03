@@ -1,11 +1,22 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from zotero_mcp.cli import (
+    op_arxiv,
+    op_attach_pdf,
+    op_children,
+    op_collections,
+    op_create_item,
+    op_get,
+    op_items,
+    op_ping,
+    op_search,
+    op_tags,
+)
 from zotero_mcp.runtime import run_zotero
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -23,40 +34,37 @@ def root_relative_path(path: str) -> str:
 @mcp.tool()
 def zotero_ping() -> dict[str, Any]:
     """Check local Zotero Debug Bridge connectivity."""
-    return run_zotero(["ping"])
+    return op_ping()
 
 
 @mcp.tool()
 def zotero_search_items(query: str, limit: int = 25) -> dict[str, Any]:
     """Search local Zotero items through the Debug Bridge."""
-    return run_zotero(["search", query, "--limit", str(limit)])
+    return op_search(query, limit=limit)
 
 
 @mcp.tool()
 def zotero_get_item(key: str) -> dict[str, Any]:
     """Get a local Zotero item and its children by item key."""
-    return run_zotero(["get", key])
+    return op_get(key)
 
 
 @mcp.tool()
 def zotero_import_arxiv(arxiv: str, collection: str | None = None) -> dict[str, Any]:
     """Import or reuse an arXiv item in local Zotero and attach the PDF."""
-    args = ["arxiv", arxiv]
-    if collection:
-        args.extend(["--collection", collection])
-    return run_zotero(args)
+    return op_arxiv(arxiv, collection_name_or_key=collection)
 
 
 @mcp.tool()
 def zotero_create_item(meta: dict[str, Any]) -> dict[str, Any]:
     """Create a local Zotero item from metadata JSON."""
-    return run_zotero(["create-item", "--meta-json", json.dumps(meta, ensure_ascii=False)])
+    return op_create_item(meta)
 
 
 @mcp.tool()
 def zotero_attach_pdf(key: str, file: str) -> dict[str, Any]:
     """Attach a local PDF file to a Zotero parent item."""
-    return run_zotero(["attach-pdf", "--key", key, "--file", root_relative_path(file)])
+    return op_attach_pdf(key, root_relative_path(file))
 
 
 @mcp.tool()
@@ -96,28 +104,25 @@ def zotero_fetch_pdf(
 @mcp.tool()
 def zotero_list_items(limit: int = 25, collection: str | None = None) -> dict[str, Any]:
     """List local Zotero items via the Debug Bridge, optionally scoped to a collection key."""
-    args = ["items", "--limit", str(limit)]
-    if collection:
-        args.extend(["--collection", collection])
-    return run_zotero(args)
+    return op_items(limit=limit, collection_key=collection)
 
 
 @mcp.tool()
 def zotero_list_collections() -> dict[str, Any]:
     """List local Zotero collections (key and name) via the Debug Bridge."""
-    return run_zotero(["collections"])
+    return op_collections()
 
 
 @mcp.tool()
 def zotero_list_tags() -> dict[str, Any]:
     """List local Zotero tags via the Debug Bridge."""
-    return run_zotero(["tags"])
+    return op_tags()
 
 
 @mcp.tool()
 def zotero_get_children(key: str) -> dict[str, Any]:
     """List child items (attachments and notes) of a local Zotero parent item."""
-    return run_zotero(["children", key])
+    return op_children(key)
 
 
 @mcp.tool()

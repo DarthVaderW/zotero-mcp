@@ -1,8 +1,10 @@
 # Client Integration Notes
 
 This repository contains a packaged Zotero CLI implementation and a Zotero MCP
-server that calls the shared in-process runtime. This component page keeps the
-current client-specific setup self-contained.
+server. The MCP server calls structured Zotero operations directly where
+available and uses the in-process runtime only for remaining text/progress
+commands. This component page keeps the current client-specific setup
+self-contained.
 
 ## Prerequisite
 

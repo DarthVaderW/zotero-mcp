@@ -95,10 +95,19 @@ def _mcp_user_agent() -> str:
     return "ZoteroMCP/1.0 (+https://github.com/DarthVaderW/zotero-mcp)"
 
 
-def require_debug_bridge() -> None:
+def ensure_debug_bridge() -> None:
     if not DEBUG_BRIDGE_TOKEN:
-        print("Error: ZOTERO_DEBUG_BRIDGE_TOKEN is required for this command", file=sys.stderr)
-        print("Set it from your local Zotero debug-bridge plugin.", file=sys.stderr)
+        raise RuntimeError(
+            "Error: ZOTERO_DEBUG_BRIDGE_TOKEN is required for this command\n"
+            "Set it from your local Zotero debug-bridge plugin."
+        )
+
+
+def require_debug_bridge() -> None:
+    try:
+        ensure_debug_bridge()
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
         sys.exit(1)
 
 
@@ -238,6 +247,12 @@ def validate_item_key(s):
         print(f"Invalid item key: '{s}'. Must be 8 alphanumeric characters.", file=sys.stderr)
         return False
     return True
+
+
+def require_item_key(s):
+    if not re.match(r"^[A-Za-z0-9]{8}$", s):
+        raise RuntimeError(f"Invalid item key: '{s}'. Must be 8 alphanumeric characters.")
+    return s
 
 
 def validate_isbn(s):
@@ -1083,21 +1098,79 @@ def _bulk_find_pdf_parents(api_key, prefix, collection_key=None):
 
 # --- command handlers ---
 
+def op_ping():
+    ensure_debug_bridge()
+    return {"zotero_version": db_ping()}
+
+
+def op_items(limit=25, collection_key=None):
+    ensure_debug_bridge()
+    items = db_get_items(limit=limit, collection_key=collection_key) or []
+    return {"total": len(items), "items": items}
+
+
+def op_search(query, limit=25):
+    ensure_debug_bridge()
+    items = db_search(query, limit=limit) or []
+    return {"total": len(items), "items": items}
+
+
+def op_get(key):
+    ensure_debug_bridge()
+    require_item_key(key)
+    item = db_get_item(key)
+    children = db_get_children(key)
+    return {"item": item, "children": children}
+
+
+def op_collections():
+    ensure_debug_bridge()
+    cols = db_get_collections() or []
+    return {"total": len(cols), "collections": cols}
+
+
+def op_tags():
+    ensure_debug_bridge()
+    tags = db_get_tags() or []
+    return {"total": len(tags), "tags": tags}
+
+
+def op_children(key):
+    ensure_debug_bridge()
+    require_item_key(key)
+    children = db_get_children(key) or []
+    return {"total": len(children), "children": children}
+
+
+def op_create_item(meta):
+    ensure_debug_bridge()
+    return {"item_key": create_item(meta)}
+
+
+def op_attach_pdf(key, file, title="Full Text PDF"):
+    ensure_debug_bridge()
+    require_item_key(key)
+    return {"attachment_key": attach_pdf_from_file(key, file, title=title)}
+
+
+def op_arxiv(arxiv, collection_name_or_key=None):
+    ensure_debug_bridge()
+    return import_arxiv(arxiv, collection_name_or_key=collection_name_or_key)
+
+
 def cmd_ping(_args):
-    require_debug_bridge()
-    version = db_ping()
+    result = op_ping()
     if _json_mode:
-        _json_print({"zotero_version": version})
+        _json_print(result)
     else:
-        print(version)
+        print(result["zotero_version"])
 
 
 def cmd_items(args):
-    require_debug_bridge()
-    items = db_get_items(limit=args.limit, collection_key=args.collection)
-    items = items or []
+    result = op_items(limit=args.limit, collection_key=args.collection)
+    items = result["items"]
     if _json_mode:
-        _json_print({"total": len(items), "items": items})
+        _json_print(result)
         return
     print(f"Showing {len(items)} item(s)\n")
     for item in items:
@@ -1105,10 +1178,10 @@ def cmd_items(args):
 
 
 def cmd_search(args):
-    require_debug_bridge()
-    items = db_search(args.query, limit=args.limit) or []
+    result = op_search(args.query, limit=args.limit)
+    items = result["items"]
     if _json_mode:
-        _json_print({"total": len(items), "items": items})
+        _json_print(result)
         return
     print(f"Found {len(items)} result(s)\n")
     for item in items:
@@ -1116,13 +1189,11 @@ def cmd_search(args):
 
 
 def cmd_get(args):
-    require_debug_bridge()
-    if not validate_item_key(args.key):
-        sys.exit(1)
-    item = db_get_item(args.key)
-    children = db_get_children(args.key)
+    result = op_get(args.key)
+    item = result["item"]
+    children = result["children"]
     if _json_mode:
-        _json_print({"item": item, "children": children})
+        _json_print(result)
         return
     if not item:
         print(f"Item {args.key} not found", file=sys.stderr)
@@ -1146,10 +1217,10 @@ def cmd_get(args):
 
 
 def cmd_collections(_args):
-    require_debug_bridge()
-    cols = db_get_collections() or []
+    result = op_collections()
+    cols = result["collections"]
     if _json_mode:
-        _json_print({"total": len(cols), "collections": cols})
+        _json_print(result)
         return
     print(f"Collections ({len(cols)}):\n")
     for c in cols:
@@ -1157,10 +1228,10 @@ def cmd_collections(_args):
 
 
 def cmd_tags(_args):
-    require_debug_bridge()
-    tags = db_get_tags() or []
+    result = op_tags()
+    tags = result["tags"]
     if _json_mode:
-        _json_print({"total": len(tags), "tags": tags})
+        _json_print(result)
         return
     print(f"Tags ({len(tags)}):\n")
     for t in tags:
@@ -1168,12 +1239,10 @@ def cmd_tags(_args):
 
 
 def cmd_children(args):
-    require_debug_bridge()
-    if not validate_item_key(args.key):
-        sys.exit(1)
-    children = db_get_children(args.key) or []
+    result = op_children(args.key)
+    children = result["children"]
     if _json_mode:
-        _json_print({"total": len(children), "children": children})
+        _json_print(result)
         return
     if not children:
         print("No children found.")
@@ -1186,29 +1255,24 @@ def cmd_children(args):
 
 
 def cmd_create_item(args):
-    require_debug_bridge()
     meta = json.loads(args.meta_json) if args.meta_json else {}
-    key = create_item(meta)
+    result = op_create_item(meta)
     if _json_mode:
-        _json_print({"item_key": key})
+        _json_print(result)
     else:
-        print(key)
+        print(result["item_key"])
 
 
 def cmd_attach_pdf(args):
-    require_debug_bridge()
-    if not validate_item_key(args.key):
-        sys.exit(1)
-    att_key = attach_pdf_from_file(args.key, args.file)
+    result = op_attach_pdf(args.key, args.file)
     if _json_mode:
-        _json_print({"attachment_key": att_key})
+        _json_print(result)
     else:
-        print(att_key)
+        print(result["attachment_key"])
 
 
 def cmd_arxiv(args):
-    require_debug_bridge()
-    result = import_arxiv(args.arxiv, collection_name_or_key=args.collection)
+    result = op_arxiv(args.arxiv, collection_name_or_key=args.collection)
     if _json_mode:
         _json_print(result)
     else:
