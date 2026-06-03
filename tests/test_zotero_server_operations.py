@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sys
 import unittest
@@ -13,7 +14,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zotero_mcp import arxiv, debug_bridge, operations, pdf_discovery, server, web_api
+from zotero_mcp import arxiv, debug_bridge, doi_ops, identifiers, operations, pdf_discovery, server, web_api, web_items
 
 
 class ZoteroServerOperationsTest(unittest.TestCase):
@@ -152,6 +153,158 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             add_collection=None,
         )
         self.assertEqual(result, expected)
+
+    def test_add_identifier_cleans_translated_item_and_posts_json(self):
+        translated = {
+            "itemType": "journalArticle",
+            "title": "Translated paper",
+            "key": "OLDKEY12",
+            "version": 9,
+            "relations": {},
+            "tags": [{"tag": "existing"}],
+        }
+        response = {"successful": {"0": {"key": "NEW12345", "data": {"title": "Translated paper"}}}}
+
+        with (
+            mock.patch.object(identifiers, "get_api_config", return_value=("api-key", "/users/1")),
+            mock.patch.object(identifiers, "_translate_identifier", return_value=[translated]),
+            mock.patch.object(identifiers, "_check_duplicate_by_metadata", return_value=None),
+            mock.patch.object(identifiers, "api_request", return_value=(json.dumps(response), {})) as api_request,
+        ):
+            result = identifiers.op_add_identifier(
+                "10.1234/example",
+                collection="COLL1234",
+                tags="reading, priority",
+            )
+
+        posted_items = api_request.call_args.kwargs["data"]
+        self.assertEqual(result["status"], "added")
+        self.assertEqual(result["successful"], [{"key": "NEW12345", "title": "Translated paper"}])
+        self.assertEqual(posted_items[0]["collections"], ["COLL1234"])
+        self.assertEqual(posted_items[0]["tags"], [{"tag": "existing"}, {"tag": "reading"}, {"tag": "priority"}])
+        for removed_field in ("key", "version", "relations"):
+            self.assertNotIn(removed_field, posted_items[0])
+
+    def test_batch_add_reports_added_duplicate_and_failed(self):
+        ids_file = ROOT / "tests" / "identifiers.txt"
+        ids_file.write_text("# skip me\n10.1/one\n\n10.2/two\n10.3/three\n", encoding="utf-8")
+        try:
+            with (
+                mock.patch.object(identifiers, "get_api_config", return_value=("api-key", "/users/1")),
+                mock.patch.object(
+                    identifiers,
+                    "op_add_identifier",
+                    side_effect=[
+                        {"status": "added", "identifier": "10.1/one"},
+                        {"status": "duplicate", "identifier": "10.2/two"},
+                        RuntimeError("bad identifier"),
+                    ],
+                ) as add_identifier,
+                mock.patch.object(identifiers.time, "sleep") as sleep,
+            ):
+                result = identifiers.op_batch_add(str(ids_file), tags="todo", sleep_seconds=0)
+        finally:
+            ids_file.unlink(missing_ok=True)
+
+        self.assertEqual(result["total"], 3)
+        self.assertEqual(result["added"], 1)
+        self.assertEqual(result["skipped"], 1)
+        self.assertEqual(result["failed"], 1)
+        self.assertEqual(add_identifier.call_count, 3)
+        sleep.assert_not_called()
+
+    def test_crossref_matches_library_citations_without_network(self):
+        citation_file = ROOT / "tests" / "citations.txt"
+        citation_file.write_text("Smith (2020) and Doe (2021)", encoding="utf-8")
+        items = [
+            {
+                "data": {
+                    "key": "ABC12345",
+                    "itemType": "journalArticle",
+                    "title": "Known paper",
+                    "date": "2020",
+                    "creators": [{"lastName": "Smith"}],
+                }
+            }
+        ]
+        try:
+            with (
+                mock.patch.object(doi_ops, "get_api_config", return_value=("api-key", "/users/1")),
+                mock.patch.object(doi_ops, "paginate_all", return_value=items),
+            ):
+                result = doi_ops.op_crossref(str(citation_file))
+        finally:
+            citation_file.unlink(missing_ok=True)
+
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(result["found"], [{"author": "Smith", "year": "2020", "key": "ABC12345", "title": "Known paper"}])
+        self.assertEqual(result["missing"], [{"author": "Doe", "year": "2021"}])
+
+    def test_find_dois_can_apply_matched_crossref_result(self):
+        item = {
+            "version": 7,
+            "data": {
+                "key": "ABC12345",
+                "itemType": "journalArticle",
+                "title": "Known paper",
+                "date": "2020",
+                "DOI": "",
+                "creators": [{"lastName": "Smith"}],
+            },
+        }
+        work = {
+            "DOI": "10.1234/example",
+            "title": ["Known paper"],
+            "issued": {"date-parts": [[2020]]},
+            "author": [{"family": "Smith"}],
+        }
+
+        with (
+            mock.patch.object(doi_ops, "get_api_config", return_value=("api-key", "/users/1")),
+            mock.patch.object(
+                doi_ops,
+                "paginate_all",
+                return_value=[
+                    item,
+                    {"data": {"key": "HASDOI12", "itemType": "journalArticle", "DOI": "10.1/old"}},
+                    {"data": {"key": "NOTE1234", "itemType": "note"}},
+                ],
+            ),
+            mock.patch.object(doi_ops, "_crossref_search", return_value=[work]),
+            mock.patch.object(doi_ops, "_patch_item_field", return_value=204) as patch_field,
+        ):
+            result = doi_ops.op_find_dois(apply=True, sleep_seconds=0)
+
+        patch_field.assert_called_once_with("api-key", "/users/1", "ABC12345", "DOI", "10.1234/example", 7)
+        self.assertEqual(result["processed"], 1)
+        self.assertEqual(result["matched"], 1)
+        self.assertEqual(result["written"], 1)
+        self.assertEqual(result["alreadyHadDoi"], 1)
+        self.assertEqual(result["wrongItemType"], 1)
+
+    def test_export_paginates_and_returns_text_without_writing(self):
+        captured = []
+
+        def fake_api_request(path, api_key, params=None):
+            captured.append((path, api_key, dict(params or {})))
+            if len(captured) == 1:
+                return ("chunk-one", {"Total-Results": "150"})
+            return ("chunk-two", {"Total-Results": "150"})
+
+        with (
+            mock.patch.object(web_items, "get_api_config", return_value=("api-key", "/users/1")),
+            mock.patch.object(web_items, "api_request", side_effect=fake_api_request),
+        ):
+            result = web_items.op_export(format="bibtex", collection="COLL1234")
+
+        self.assertEqual(result, {"format": "bibtex", "collection": "COLL1234", "bytes": 19, "text": "chunk-one\nchunk-two"})
+        self.assertEqual(
+            captured,
+            [
+                ("/users/1/collections/COLL1234/items", "api-key", {"format": "bibtex", "limit": "100", "start": "0"}),
+                ("/users/1/collections/COLL1234/items", "api-key", {"format": "bibtex", "limit": "100", "start": "100"}),
+            ],
+        )
 
 
 if __name__ == "__main__":
