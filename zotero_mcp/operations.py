@@ -21,6 +21,7 @@ from zotero_mcp.config import API_BASE, CROSSREF_EMAIL, DOI_EXCLUDED_ITEM_TYPES,
 from zotero_mcp.debug_bridge import (
     db_add_attachment,
     db_add_item_to_collection,
+    db_add_snapshot,
     db_create_item,
     db_delete_item,
     db_get_children,
@@ -32,15 +33,15 @@ from zotero_mcp.debug_bridge import (
     db_search,
     ensure_debug_bridge,
 )
-from zotero_mcp.errors import CommandError
+from zotero_mcp.errors import CommandError as CommandError
 from zotero_mcp.validators import (
     require_doi,
     require_isbn,
     require_item_key,
     require_item_type,
-    validate_doi,
-    validate_isbn,
-    validate_item_key,
+    validate_doi as validate_doi,
+    validate_isbn as validate_isbn,
+    validate_item_key as validate_item_key,
 )
 from zotero_mcp.web_api import api_get_json, api_request, get_api_config, paginate_all
 

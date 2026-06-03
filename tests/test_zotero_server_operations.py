@@ -13,7 +13,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zotero_mcp import operations, server, web_api
+from zotero_mcp import debug_bridge, operations, server, web_api
 
 
 class ZoteroServerOperationsTest(unittest.TestCase):
@@ -77,6 +77,50 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
         self.assertEqual(ctx.exception.code, 403)
         self.assertIn("API Error 403", str(ctx.exception))
+
+    def test_debug_bridge_wrappers_execute_without_orphaned_names(self):
+        with mock.patch.object(debug_bridge, "debug_bridge", return_value={"key": "ABC12345", "success": True}) as bridge:
+            result = debug_bridge.db_create_item({"itemType": "book", "title": "Wrapper test"})
+
+        self.assertEqual(result, {"key": "ABC12345", "success": True})
+        self.assertIn('new Zotero.Item("book")', bridge.call_args.args[0])
+
+        with self.assertRaisesRegex(RuntimeError, "itemType is required"):
+            debug_bridge.db_create_item({"title": "Missing type"})
+
+    def test_debug_bridge_attachment_wrapper_checks_local_path(self):
+        pdf = ROOT / "tests" / "fixture.pdf"
+        pdf.write_bytes(b"%PDF-1.4\n")
+        try:
+            with mock.patch.object(debug_bridge, "debug_bridge", return_value="ATT12345") as bridge:
+                result = debug_bridge.db_add_attachment("ABC12345", str(pdf), title="Full Text PDF")
+        finally:
+            pdf.unlink(missing_ok=True)
+
+        self.assertEqual(result, {"success": True, "attachment_key": "ATT12345"})
+        self.assertIn(str(pdf), bridge.call_args.args[0])
+
+    def test_import_arxiv_keeps_snapshot_result(self):
+        meta = {
+            "itemType": "preprint",
+            "title": "arXiv wrapper test",
+            "url": "https://arxiv.org/abs/2401.01234",
+            "extra_fields": {"DOI": "10.48550/arXiv.2401.01234"},
+            "__pdf_url": "https://arxiv.org/pdf/2401.01234",
+        }
+
+        with (
+            mock.patch.object(operations, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)),
+            mock.patch.object(operations, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)),
+            mock.patch.object(operations, "create_item", return_value="ABC12345"),
+            mock.patch.object(operations, "db_add_snapshot", return_value="SNAP1234") as add_snapshot,
+            mock.patch.object(operations, "_download_pdf", return_value=True),
+            mock.patch.object(operations, "attach_pdf_from_file", return_value="ATT12345"),
+        ):
+            result = operations.import_arxiv("2401.01234")
+
+        add_snapshot.assert_called_once_with("ABC12345", "https://arxiv.org/abs/2401.01234")
+        self.assertEqual(result["snapshot_key"], "SNAP1234")
 
     def test_server_web_api_tools_call_structured_operations(self):
         with mock.patch.object(server, "op_check_pdfs", return_value={"total": 0}) as op_check:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import urllib.error
 import urllib.request
 
@@ -11,6 +12,7 @@ from zotero_mcp.config import (
     DEBUG_BRIDGE_TOKEN,
     DEBUG_BRIDGE_URL,
 )
+from zotero_mcp.validators import require_item_type
 
 def ensure_debug_bridge() -> None:
     if not DEBUG_BRIDGE_TOKEN:
