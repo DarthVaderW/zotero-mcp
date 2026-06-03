@@ -1,8 +1,8 @@
 # Client Integration Notes
 
-This repository contains a packaged Zotero CLI implementation and a thin Zotero
-MCP server. This component page keeps the current client-specific setup
-self-contained.
+This repository contains a packaged Zotero CLI implementation and a Zotero MCP
+server that calls the shared in-process runtime. This component page keeps the
+current client-specific setup self-contained.
 
 ## Prerequisite
 

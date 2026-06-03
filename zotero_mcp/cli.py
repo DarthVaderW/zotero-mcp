@@ -70,8 +70,12 @@ _json_mode = False
 
 
 def _enable_json_mode() -> None:
+    _set_json_mode(True)
+
+
+def _set_json_mode(enabled: bool) -> None:
     global _json_mode
-    _json_mode = True
+    _json_mode = enabled
 
 
 def _json_print(data) -> None:
@@ -1836,6 +1840,49 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def dispatch(args) -> None:
+    if args.command == "ping":
+        cmd_ping(args)
+    elif args.command == "items":
+        cmd_items(args)
+    elif args.command == "search":
+        cmd_search(args)
+    elif args.command == "get":
+        cmd_get(args)
+    elif args.command == "collections":
+        cmd_collections(args)
+    elif args.command == "tags":
+        cmd_tags(args)
+    elif args.command == "children":
+        cmd_children(args)
+    elif args.command == "create-item":
+        cmd_create_item(args)
+    elif args.command == "attach-pdf":
+        cmd_attach_pdf(args)
+    elif args.command == "arxiv":
+        cmd_arxiv(args)
+    elif args.command == "delete":
+        cmd_delete(args)
+    elif args.command in ("add-doi", "add-isbn", "add-pmid"):
+        result = cmd_add_identifier(args)
+        if result == "failed":
+            sys.exit(1)
+    elif args.command == "update":
+        cmd_update(args)
+    elif args.command == "export":
+        cmd_export(args)
+    elif args.command == "batch-add":
+        cmd_batch_add(args)
+    elif args.command == "check-pdfs":
+        cmd_check_pdfs(args)
+    elif args.command == "crossref":
+        cmd_crossref(args)
+    elif args.command == "find-dois":
+        cmd_find_dois(args)
+    elif args.command == "fetch-pdfs":
+        cmd_fetch_pdfs(args)
+
+
 def main():
     parser = build_parser()
     args = parser.parse_args()
@@ -1848,46 +1895,7 @@ def main():
         _enable_json_mode()
 
     try:
-        if args.command == "ping":
-            cmd_ping(args)
-        elif args.command == "items":
-            cmd_items(args)
-        elif args.command == "search":
-            cmd_search(args)
-        elif args.command == "get":
-            cmd_get(args)
-        elif args.command == "collections":
-            cmd_collections(args)
-        elif args.command == "tags":
-            cmd_tags(args)
-        elif args.command == "children":
-            cmd_children(args)
-        elif args.command == "create-item":
-            cmd_create_item(args)
-        elif args.command == "attach-pdf":
-            cmd_attach_pdf(args)
-        elif args.command == "arxiv":
-            cmd_arxiv(args)
-        elif args.command == "delete":
-            cmd_delete(args)
-        elif args.command in ("add-doi", "add-isbn", "add-pmid"):
-            result = cmd_add_identifier(args)
-            if result == "failed":
-                sys.exit(1)
-        elif args.command == "update":
-            cmd_update(args)
-        elif args.command == "export":
-            cmd_export(args)
-        elif args.command == "batch-add":
-            cmd_batch_add(args)
-        elif args.command == "check-pdfs":
-            cmd_check_pdfs(args)
-        elif args.command == "crossref":
-            cmd_crossref(args)
-        elif args.command == "find-dois":
-            cmd_find_dois(args)
-        elif args.command == "fetch-pdfs":
-            cmd_fetch_pdfs(args)
+        dispatch(args)
     except RuntimeError as e:
         print(str(e), file=sys.stderr)
         sys.exit(1)

@@ -1,41 +1,23 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
+from zotero_mcp.runtime import run_zotero
 
-PACKAGE_DIR = Path(__file__).resolve().parent
-ROOT = PACKAGE_DIR.parent
-CLI = PACKAGE_DIR / "cli.py"
+ROOT = Path(__file__).resolve().parents[1]
 
 mcp = FastMCP("zotero-mcp")
 
 
-def run_zotero(args: list[str], expect_json: bool = True) -> dict[str, Any]:
-    command = [sys.executable, str(CLI), "--json", *args]
-    proc = subprocess.run(
-        command,
-        cwd=str(ROOT),
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    stdout = proc.stdout.strip()
-    stderr = proc.stderr.strip()
-    if proc.returncode != 0:
-        raise RuntimeError(stderr or stdout or f"zotero.py exited with {proc.returncode}")
-    if expect_json:
-        try:
-            return json.loads(stdout) if stdout else {}
-        except json.JSONDecodeError:
-            return {"stdout": stdout}
-    return {"stdout": stdout, "stderr": stderr}
+def root_relative_path(path: str) -> str:
+    local_path = Path(path)
+    if local_path.is_absolute():
+        return str(local_path)
+    return str(ROOT / local_path)
 
 
 @mcp.tool()
@@ -74,7 +56,7 @@ def zotero_create_item(meta: dict[str, Any]) -> dict[str, Any]:
 @mcp.tool()
 def zotero_attach_pdf(key: str, file: str) -> dict[str, Any]:
     """Attach a local PDF file to a Zotero parent item."""
-    return run_zotero(["attach-pdf", "--key", key, "--file", file])
+    return run_zotero(["attach-pdf", "--key", key, "--file", root_relative_path(file)])
 
 
 @mcp.tool()
@@ -97,7 +79,7 @@ def zotero_fetch_pdf(
     if key:
         args.extend(["--key", key])
     if file:
-        args.extend(["--file", file])
+        args.extend(["--file", root_relative_path(file)])
     if collection:
         args.extend(["--collection", collection])
     if limit is not None:
@@ -106,6 +88,8 @@ def zotero_fetch_pdf(
         args.append("--dry-run")
     if download_only:
         args.append("--download-only")
+    if not key:
+        args.extend(["--download-dir", str(ROOT / "pdfs")])
     return run_zotero(args, expect_json=False)
 
 
@@ -216,7 +200,7 @@ def zotero_export(
     if collection:
         args.extend(["--collection", collection])
     if output:
-        args.extend(["--output", output])
+        args.extend(["--output", root_relative_path(output)])
     return run_zotero(args, expect_json=False)
 
 
@@ -234,7 +218,7 @@ def zotero_batch_add(
     """
     if id_type not in {"doi", "isbn", "pmid"}:
         raise ValueError("id_type must be one of: doi, isbn, pmid")
-    args = ["batch-add", file, "--type", id_type]
+    args = ["batch-add", root_relative_path(file), "--type", id_type]
     if collection:
         args.extend(["--collection", collection])
     if tags:
@@ -264,7 +248,7 @@ def zotero_find_dois(
 @mcp.tool()
 def zotero_crossref(file: str) -> dict[str, Any]:
     """Cross-reference 'Author (Year)' citations in a text/markdown file against the library."""
-    return run_zotero(["crossref", file], expect_json=False)
+    return run_zotero(["crossref", root_relative_path(file)], expect_json=False)
 
 
 @mcp.tool()
