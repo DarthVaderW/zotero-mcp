@@ -8,6 +8,7 @@ import os
 import re
 import tempfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -21,6 +22,29 @@ def _mcp_user_agent() -> str:
     return "ZoteroMCP/1.0 (+https://github.com/DarthVaderW/zotero-mcp)"
 
 
+def _read_url(req, timeout=30, retries=1):
+    last_error = None
+    for attempt in range(max(1, retries)):
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if exc.code == 429 and attempt + 1 < retries:
+                time.sleep(3 * (attempt + 1))
+                continue
+            if exc.code == 429:
+                raise RuntimeError("arXiv API rate limited this request (HTTP 429); retry later.") from exc
+            raise RuntimeError(f"arXiv HTTP {exc.code}: {exc.reason}") from exc
+        except urllib.error.URLError as exc:
+            last_error = exc
+            if attempt + 1 < retries:
+                time.sleep(1 * (attempt + 1))
+                continue
+            break
+    raise RuntimeError(f"arXiv network error: {last_error}") from last_error
+
+
 def _extract_arxiv_id(arxiv_id_or_url):
     s = arxiv_id_or_url.strip()
     m = re.search(r"arxiv\.org/(abs|pdf)/([0-9]{4}\.[0-9]{4,5}(v\d+)?)", s, re.I)
@@ -32,11 +56,143 @@ def _extract_arxiv_id(arxiv_id_or_url):
     raise ValueError(f"Invalid arXiv ID or URL: {arxiv_id_or_url}")
 
 
+def _clean_text(value):
+    return re.sub(r"\s+", " ", (value or "").strip())
+
+
+def _creator_display_names(creators):
+    names = []
+    for creator in creators:
+        if creator.get("name"):
+            names.append(creator["name"])
+            continue
+        name = " ".join(part for part in [creator.get("firstName", ""), creator.get("lastName", "")] if part).strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def _title_score(query, title):
+    try:
+        from zotero_mcp.metadata import _title_similarity
+
+        return round(float(_title_similarity(query, title)), 4)
+    except Exception:
+        return 0.0
+
+
+def _escape_arxiv_query_value(value):
+    return (value or "").replace("\\", "\\\\").replace('"', r"\"")
+
+
+def _arxiv_id_from_url(url):
+    match = re.search(r"arxiv\.org/abs/([^?#]+)", url or "", re.IGNORECASE)
+    if not match:
+        return ""
+    return match.group(1).strip()
+
+
+def _metadata_to_candidate(meta, query=None):
+    arxiv_id = meta.get("extra_fields", {}).get("archiveLocation") or _arxiv_id_from_url(meta.get("url", ""))
+    abs_url = meta.get("url") or f"https://arxiv.org/abs/{arxiv_id}"
+    pdf_url = meta.get("__pdf_url") or f"https://arxiv.org/pdf/{arxiv_id}"
+    title = _clean_text(meta.get("title", ""))
+    candidate = {
+        "arxiv_id": arxiv_id,
+        "arxivId": arxiv_id,
+        "title": title,
+        "authors": _creator_display_names(meta.get("creators", [])),
+        "published": meta.get("date", ""),
+        "abstract": _clean_text(meta.get("abstract", "")),
+        "abs_url": abs_url,
+        "pdf_url": pdf_url,
+        "arxivAbsUrl": abs_url,
+        "arxivPdfUrl": pdf_url,
+        "doi": meta.get("extra_fields", {}).get("DOI", ""),
+    }
+    if query:
+        candidate["score"] = _title_score(query, title)
+    return candidate
+
+
+def _entry_to_candidate(entry, ns, query):
+    entry_url = (entry.findtext("atom:id", default="", namespaces=ns) or "").strip()
+    arxiv_id = _arxiv_id_from_url(entry_url)
+    title = _clean_text(entry.findtext("atom:title", default="", namespaces=ns) or "")
+    authors = [
+        _clean_text(author.findtext("atom:name", default="", namespaces=ns) or "")
+        for author in entry.findall("atom:author", ns)
+    ]
+    authors = [author for author in authors if author]
+    pdf_url = f"https://arxiv.org/pdf/{arxiv_id}" if arxiv_id else ""
+    for link in entry.findall("atom:link", ns):
+        if (link.attrib.get("title") or "").lower() == "pdf" and link.attrib.get("href"):
+            pdf_url = link.attrib["href"]
+            break
+    doi = (entry.findtext("arxiv:doi", default="", namespaces=ns) or "").strip()
+    if not doi and arxiv_id:
+        base_id = re.sub(r"v\d+$", "", arxiv_id, flags=re.IGNORECASE)
+        doi = f"10.48550/arXiv.{base_id}"
+    return {
+        "arxiv_id": arxiv_id,
+        "arxivId": arxiv_id,
+        "title": title,
+        "authors": authors,
+        "published": (entry.findtext("atom:published", default="", namespaces=ns) or "")[:10],
+        "updated": (entry.findtext("atom:updated", default="", namespaces=ns) or "")[:10],
+        "abstract": _clean_text(entry.findtext("atom:summary", default="", namespaces=ns) or ""),
+        "abs_url": entry_url or (f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else ""),
+        "pdf_url": pdf_url,
+        "arxivAbsUrl": entry_url or (f"https://arxiv.org/abs/{arxiv_id}" if arxiv_id else ""),
+        "arxivPdfUrl": pdf_url,
+        "doi": doi,
+        "score": _title_score(query, title),
+    }
+
+
+def search_arxiv(query, limit=5):
+    query = (query or "").strip()
+    if not query:
+        raise ValueError("query is required")
+    limit = max(1, min(int(limit or 5), 25))
+
+    try:
+        arxiv_id = _extract_arxiv_id(query)
+    except ValueError:
+        arxiv_id = None
+
+    if arxiv_id:
+        return {
+            "query": query,
+            "total": 1,
+            "candidates": [_metadata_to_candidate(_fetch_arxiv_metadata(arxiv_id), query=query)],
+        }
+
+    params = {
+        "search_query": f'ti:"{_escape_arxiv_query_value(query)}"',
+        "start": 0,
+        "max_results": limit,
+        "sortBy": "relevance",
+        "sortOrder": "descending",
+    }
+    url = "https://export.arxiv.org/api/query?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(url, headers={"Accept": "application/atom+xml", "User-Agent": _mcp_user_agent()})
+    xml_text = _read_url(req, timeout=30, retries=2)
+
+    ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError as exc:
+        raise RuntimeError("arXiv API returned invalid XML") from exc
+    candidates = [_entry_to_candidate(entry, ns, query) for entry in root.findall("atom:entry", ns)]
+    candidates = [candidate for candidate in candidates if candidate.get("arxiv_id")]
+    return {"query": query, "total": len(candidates), "candidates": candidates[:limit]}
+
+
 def _fetch_arxiv_metadata_from_abs_page(arxiv_id):
     url = f"https://arxiv.org/abs/{arxiv_id}"
     req = urllib.request.Request(url, headers={"User-Agent": _mcp_user_agent()})
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        html_text = resp.read().decode("utf-8", errors="replace")
+    html_text = _read_url(req, timeout=30, retries=2).decode("utf-8", errors="replace")
 
     def _meta(name):
         m = re.search(rf'<meta\s+name="{re.escape(name)}"\s+content="([^"]*)"\s*/?>', html_text, re.IGNORECASE)
@@ -82,8 +238,7 @@ def _fetch_arxiv_metadata(arxiv_id):
     url = "https://export.arxiv.org/api/query?" + urllib.parse.urlencode({"id_list": arxiv_id})
     req = urllib.request.Request(url, headers={"Accept": "application/atom+xml", "User-Agent": _mcp_user_agent()})
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            xml_text = resp.read()
+        xml_text = _read_url(req, timeout=30, retries=2)
     except Exception:
         return _fetch_arxiv_metadata_from_abs_page(arxiv_id)
 
@@ -163,9 +318,25 @@ def _fetch_arxiv_metadata_via_translator(arxiv_id):
     }
 
 
-def import_arxiv(arxiv_id_or_url, collection_name_or_key=None):
+def _find_arxiv_html_url(arxiv_id):
+    abs_url = f"https://arxiv.org/abs/{arxiv_id}"
+    req = urllib.request.Request(abs_url, headers={"User-Agent": _mcp_user_agent()})
+    html_text = _read_url(req, timeout=30, retries=2).decode("utf-8", errors="replace")
+
+    for match in re.finditer(r'<a[^>]+href="([^"]+)"[^>]*>(.*?)</a>', html_text, re.IGNORECASE | re.DOTALL):
+        href = html.unescape(match.group(1)).strip()
+        label = re.sub(r"<.*?>", "", match.group(2)).strip()
+        if not href:
+            continue
+        if "HTML" in label or "/html/" in href:
+            return urllib.parse.urljoin(abs_url, href)
+    return None
+
+
+def import_arxiv(arxiv_id_or_url, collection_name_or_key=None, attach_html=True):
     arxiv_id = _extract_arxiv_id(arxiv_id_or_url)
     source = "translator"
+    warnings = []
     try:
         meta = _fetch_arxiv_metadata_via_translator(arxiv_id)
     except Exception:
@@ -185,14 +356,25 @@ def import_arxiv(arxiv_id_or_url, collection_name_or_key=None):
         meta.setdefault("extra_fields", {})["DOI"] = f"10.48550/arXiv.{arxiv_id.split('v')[0]}"
 
     pdf_url = meta.pop("__pdf_url", f"https://arxiv.org/pdf/{arxiv_id}")
+    abs_url = meta.get("url", f"https://arxiv.org/abs/{arxiv_id}")
 
     item_key = create_item(meta)
 
     snapshot_key = None
     try:
-        snapshot_key = db_add_snapshot(item_key, meta.get("url", f"https://arxiv.org/abs/{arxiv_id}"))
-    except Exception:
-        pass
+        snapshot_key = db_add_snapshot(item_key, abs_url)
+    except Exception as exc:
+        warnings.append(f"abstract snapshot failed: {exc}")
+
+    html_url = None
+    html_snapshot_key = None
+    if attach_html:
+        try:
+            html_url = _find_arxiv_html_url(arxiv_id)
+            if html_url:
+                html_snapshot_key = db_add_snapshot(item_key, html_url, title="arXiv HTML Snapshot")
+        except Exception as exc:
+            warnings.append(f"html snapshot failed: {exc}")
 
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp_path = tmp.name
@@ -217,5 +399,19 @@ def import_arxiv(arxiv_id_or_url, collection_name_or_key=None):
         "item_key": item_key,
         "attachment_key": attachment_key,
         "snapshot_key": snapshot_key,
+        "abstract_snapshot_key": snapshot_key,
+        "html_snapshot_key": html_snapshot_key,
+        "arxiv_abs_url": abs_url,
+        "arxiv_pdf_url": pdf_url,
+        "arxiv_html_url": html_url,
         "collection": collection,
+        "warnings": warnings,
+        "zoteroItemKey": item_key,
+        "pdfAttachmentKey": attachment_key,
+        "abstractSnapshotKey": snapshot_key,
+        "htmlSnapshotKey": html_snapshot_key,
+        "arxivId": arxiv_id,
+        "arxivAbsUrl": abs_url,
+        "arxivPdfUrl": pdf_url,
+        "arxivHtmlUrl": html_url,
     }

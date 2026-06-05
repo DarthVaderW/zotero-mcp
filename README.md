@@ -8,7 +8,7 @@ General-purpose Zotero MCP server and helper CLI.
 - `zotero_mcp/server.py`: MCP tool surface that calls structured operations directly.
 - `zotero_mcp/operations.py`: structured operation entrypoints shared by the MCP server and CLI.
 - `zotero_mcp/local_ops.py`: local Debug Bridge create/attach operations.
-- `zotero_mcp/arxiv.py`: arXiv metadata import workflow.
+- `zotero_mcp/arxiv.py`: arXiv metadata import workflow, PDF attachment, and arXiv HTML snapshot discovery.
 - `zotero_mcp/pdfs.py`: shared PDF download helpers.
 - `zotero_mcp/identifiers.py`: DOI/ISBN/PMID translation and add/batch-add operations.
 - `zotero_mcp/pdf_discovery.py`: remote PDF discovery and Zotero Web API attachment upload/linking.
@@ -138,6 +138,21 @@ python3 -m zotero_mcp.cli ping
 ```
 
 The final command requires Zotero running locally with Debug Bridge enabled.
+
+Useful local commands:
+
+```bash
+python3 -m zotero_mcp.cli search-arxiv "Retargeting Matters"
+python3 -m zotero_mcp.cli capture-arxiv "Retargeting Matters" --confirmed-arxiv-id 2510.02252 --collection "Humanoid Retargeting"
+python3 -m zotero_mcp.cli arxiv 2603.11480 --collection "Humanoid Retargeting"
+python3 -m zotero_mcp.cli attach-snapshot --key ABC12345 --url https://arxiv.org/html/2603.11480v1 --title "arXiv HTML Snapshot"
+```
+
+`search-arxiv` is read-only. `capture-arxiv` writes only when the input is an
+arXiv ID/URL or `--confirmed-arxiv-id` is supplied; title-only input returns
+candidates and does not write to Zotero. arXiv imports check for existing local
+items by arXiv ID/DOI/URL before creating a new item; use `--force` only when a
+duplicate is intentional.
 
 ## Troubleshooting
 

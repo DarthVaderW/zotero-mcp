@@ -9,7 +9,9 @@ from zotero_mcp.operations import (
     op_add_identifier,
     op_arxiv,
     op_attach_pdf,
+    op_attach_snapshot,
     op_batch_add,
+    op_capture_arxiv,
     op_check_pdfs,
     op_children,
     op_collections,
@@ -23,6 +25,7 @@ from zotero_mcp.operations import (
     op_items,
     op_ping,
     op_search,
+    op_search_arxiv,
     op_tags,
     op_update_item,
 )
@@ -58,9 +61,41 @@ def zotero_get_item(key: str) -> dict[str, Any]:
 
 
 @mcp.tool()
-def zotero_import_arxiv(arxiv: str, collection: str | None = None) -> dict[str, Any]:
-    """Import or reuse an arXiv item in local Zotero and attach the PDF."""
-    return op_arxiv(arxiv, collection_name_or_key=collection)
+def zotero_import_arxiv(
+    arxiv: str,
+    collection: str | None = None,
+    attach_html: bool = True,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Import or reuse an arXiv item in local Zotero, attach the PDF, and try arXiv HTML."""
+    return op_arxiv(arxiv, collection_name_or_key=collection, attach_html=attach_html, force=force)
+
+
+@mcp.tool()
+def zotero_search_arxiv(query: str, limit: int = 5) -> dict[str, Any]:
+    """Search arXiv candidates by arXiv ID/URL or paper title. This is read-only."""
+    return op_search_arxiv(query, limit=limit)
+
+
+@mcp.tool()
+def zotero_capture_arxiv(
+    paper: str,
+    confirmed_arxiv_id: str | None = None,
+    collection: str | None = None,
+    attach_html: bool = True,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Capture an arXiv paper after an ID/URL or confirmed candidate is available.
+
+    Title-only input returns candidates and does not write until confirmed_arxiv_id is provided.
+    """
+    return op_capture_arxiv(
+        paper,
+        confirmed_arxiv_id=confirmed_arxiv_id,
+        collection=collection,
+        attach_html=attach_html,
+        force=force,
+    )
 
 
 @mcp.tool()
@@ -73,6 +108,12 @@ def zotero_create_item(meta: dict[str, Any]) -> dict[str, Any]:
 def zotero_attach_pdf(key: str, file: str) -> dict[str, Any]:
     """Attach a local PDF file to a Zotero parent item."""
     return op_attach_pdf(key, root_relative_path(file))
+
+
+@mcp.tool()
+def zotero_attach_snapshot(key: str, url: str, title: str = "Web Page Snapshot") -> dict[str, Any]:
+    """Attach a web page snapshot from a URL to a Zotero parent item."""
+    return op_attach_snapshot(key, url, title=title)
 
 
 @mcp.tool()

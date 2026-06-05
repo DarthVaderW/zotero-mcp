@@ -48,6 +48,29 @@ class ZoteroCLITest(unittest.TestCase):
         self.assertIn("--dry-run", proc.stdout)
         self.assertIn("--link-only", proc.stdout)
 
+    def test_help_attach_snapshot(self):
+        proc = self.run_cli("attach-snapshot", "--help")
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("--url", proc.stdout)
+        self.assertIn("--title", proc.stdout)
+
+    def test_help_arxiv_has_html_toggle(self):
+        proc = self.run_cli("arxiv", "--help")
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("--no-html", proc.stdout)
+        self.assertIn("--force", proc.stdout)
+
+    def test_help_search_arxiv(self):
+        proc = self.run_cli("search-arxiv", "--help")
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("--limit", proc.stdout)
+
+    def test_help_capture_arxiv(self):
+        proc = self.run_cli("capture-arxiv", "--help")
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("--confirmed-arxiv-id", proc.stdout)
+        self.assertIn("--no-html", proc.stdout)
+
     def test_arxiv_id_extract(self):
         self.assertEqual(self.mod._extract_arxiv_id("2401.01234"), "2401.01234")
         self.assertEqual(self.mod._extract_arxiv_id("https://arxiv.org/abs/2401.01234v2"), "2401.01234v2")

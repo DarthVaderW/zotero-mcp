@@ -7,7 +7,10 @@ import re
 
 from zotero_mcp.config import PDF_SOURCES as PDF_SOURCES
 from zotero_mcp.debug_bridge import (
+    db_add_item_to_collection,
+    db_add_snapshot,
     db_delete_item,
+    db_find_arxiv_item,
     db_get_children,
     db_get_collections,
     db_get_item,
@@ -20,6 +23,7 @@ from zotero_mcp.debug_bridge import (
 from zotero_mcp.errors import CommandError as CommandError
 from zotero_mcp.arxiv import _extract_arxiv_id as _extract_arxiv_id
 from zotero_mcp.arxiv import import_arxiv as import_arxiv
+from zotero_mcp.arxiv import search_arxiv as search_arxiv
 from zotero_mcp.doi_ops import (
     _crossref_search as _crossref_search,
     _extract_citations as _extract_citations,
@@ -123,9 +127,67 @@ def op_attach_pdf(key, file, title="Full Text PDF"):
     require_item_key(key)
     return {"attachment_key": attach_pdf_from_file(key, file, title=title)}
 
-def op_arxiv(arxiv, collection_name_or_key=None):
+def _existing_arxiv_result(arxiv_id, existing, collection=None):
+    item = existing[0] if existing else {}
+    item_key = item.get("key")
+    collection_result = None
+    warnings = []
+    if item_key and collection:
+        try:
+            collection_result = db_add_item_to_collection(item_key, collection)
+        except Exception as exc:
+            warnings.append(f"collection update failed: {exc}")
+    return {
+        "status": "existing",
+        "arxiv_id": arxiv_id,
+        "arxivId": arxiv_id,
+        "item_key": item_key,
+        "zoteroItemKey": item_key,
+        "existing": item,
+        "matches": existing,
+        "collection": collection_result,
+        "warnings": warnings,
+    }
+
+def op_arxiv(arxiv, collection_name_or_key=None, attach_html=True, force=False):
     ensure_debug_bridge()
-    return import_arxiv(arxiv, collection_name_or_key=collection_name_or_key)
+    arxiv_id = _extract_arxiv_id(arxiv)
+    if not force:
+        existing = db_find_arxiv_item(arxiv_id) or []
+        if existing:
+            return _existing_arxiv_result(arxiv_id, existing, collection=collection_name_or_key)
+    result = import_arxiv(arxiv_id, collection_name_or_key=collection_name_or_key, attach_html=attach_html)
+    result.setdefault("status", "added")
+    return result
+
+def op_search_arxiv(query, limit=5):
+    return search_arxiv(query, limit=limit)
+
+def op_capture_arxiv(paper, confirmed_arxiv_id=None, collection=None, attach_html=True, force=False):
+    paper = (paper or "").strip()
+    if not paper:
+        raise ValueError("paper is required")
+    if confirmed_arxiv_id:
+        return op_arxiv(confirmed_arxiv_id, collection_name_or_key=collection, attach_html=attach_html, force=force)
+    try:
+        arxiv_id = _extract_arxiv_id(paper)
+    except ValueError:
+        arxiv_id = None
+    if arxiv_id:
+        return op_arxiv(arxiv_id, collection_name_or_key=collection, attach_html=attach_html, force=force)
+    search = op_search_arxiv(paper, limit=5)
+    return {
+        "status": "needs_selection",
+        "query": paper,
+        "message": "Title searches are read-only. Pass confirmed_arxiv_id to capture one candidate.",
+        "candidates": search["candidates"],
+    }
+
+def op_attach_snapshot(key, url, title="Web Page Snapshot"):
+    ensure_debug_bridge()
+    require_item_key(key)
+    snapshot_key = db_add_snapshot(key, url, title=title)
+    return {"snapshot_key": snapshot_key, "url": url, "title": title}
 
 def op_delete_items(keys, permanent=False):
     ensure_debug_bridge()

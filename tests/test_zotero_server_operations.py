@@ -89,6 +89,39 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "itemType is required"):
             debug_bridge.db_create_item({"title": "Missing type"})
 
+        with mock.patch.object(debug_bridge, "debug_bridge", return_value=[]) as bridge:
+            result = debug_bridge.db_find_arxiv_item("2401.01234v2")
+
+        self.assertEqual(result, [])
+        self.assertIn("10.48550/arxiv.2401.01234", bridge.call_args.args[0])
+        self.assertIn("archiveLocation", bridge.call_args.args[0])
+        self.assertIn("Zotero.Items.getAll(lib, false)", bridge.call_args.args[0])
+        self.assertNotIn('["itemType", "title"', bridge.call_args.args[0])
+        self.assertIn("if (item.loadAllData) await item.loadAllData();", bridge.call_args.args[0])
+        self.assertIn('next === "v"', bridge.call_args.args[0])
+
+    def test_debug_bridge_snapshot_wrapper_accepts_title(self):
+        with mock.patch.object(debug_bridge, "debug_bridge", return_value="SNAP1234") as bridge:
+            result = debug_bridge.db_add_snapshot(
+                "ABC12345",
+                "https://arxiv.org/html/2401.01234v1",
+                title="arXiv HTML Snapshot",
+            )
+
+        self.assertEqual(result, "SNAP1234")
+        self.assertIn("arXiv HTML Snapshot", bridge.call_args.args[0])
+
+    def test_find_arxiv_html_url_parses_abs_page_link(self):
+        page = b'<a href="/html/2401.01234v1">HTML (experimental)</a>'
+
+        with mock.patch.object(arxiv, "_read_url", return_value=page):
+            result = arxiv._find_arxiv_html_url("2401.01234")
+
+        self.assertEqual(result, "https://arxiv.org/html/2401.01234v1")
+
+    def test_arxiv_query_value_escape(self):
+        self.assertEqual(arxiv._escape_arxiv_query_value('a "quoted" title'), r'a \"quoted\" title')
+
     def test_debug_bridge_attachment_wrapper_checks_local_path(self):
         pdf = ROOT / "tests" / "fixture.pdf"
         pdf.write_bytes(b"%PDF-1.4\n")
@@ -113,15 +146,108 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         with (
             mock.patch.object(arxiv, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)),
             mock.patch.object(arxiv, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)),
+            mock.patch.object(arxiv, "_find_arxiv_html_url", return_value="https://arxiv.org/html/2401.01234v1"),
             mock.patch.object(arxiv, "create_item", return_value="ABC12345"),
-            mock.patch.object(arxiv, "db_add_snapshot", return_value="SNAP1234") as add_snapshot,
+            mock.patch.object(arxiv, "db_add_snapshot", side_effect=["SNAP1234", "HTML1234"]) as add_snapshot,
             mock.patch.object(arxiv, "_download_pdf", return_value=True),
             mock.patch.object(arxiv, "attach_pdf_from_file", return_value="ATT12345"),
         ):
             result = operations.import_arxiv("2401.01234")
 
-        add_snapshot.assert_called_once_with("ABC12345", "https://arxiv.org/abs/2401.01234")
+        self.assertEqual(
+            add_snapshot.call_args_list,
+            [
+                mock.call("ABC12345", "https://arxiv.org/abs/2401.01234"),
+                mock.call("ABC12345", "https://arxiv.org/html/2401.01234v1", title="arXiv HTML Snapshot"),
+            ],
+        )
         self.assertEqual(result["snapshot_key"], "SNAP1234")
+        self.assertEqual(result["html_snapshot_key"], "HTML1234")
+        self.assertEqual(result["htmlSnapshotKey"], "HTML1234")
+        self.assertEqual(result["arxivHtmlUrl"], "https://arxiv.org/html/2401.01234v1")
+
+    def test_op_arxiv_reuses_existing_item_by_default(self):
+        existing = [{"key": "ABC12345", "title": "Existing"}]
+
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "db_find_arxiv_item", return_value=existing) as find_item,
+            mock.patch.object(operations, "import_arxiv") as import_item,
+        ):
+            result = operations.op_arxiv("2401.01234")
+
+        find_item.assert_called_once_with("2401.01234")
+        import_item.assert_not_called()
+        self.assertEqual(result["status"], "existing")
+        self.assertEqual(result["item_key"], "ABC12345")
+
+    def test_op_arxiv_force_skips_duplicate_check(self):
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "db_find_arxiv_item") as find_item,
+            mock.patch.object(operations, "import_arxiv", return_value={"item_key": "NEW12345"}) as import_item,
+        ):
+            result = operations.op_arxiv("2401.01234", force=True)
+
+        find_item.assert_not_called()
+        import_item.assert_called_once_with("2401.01234", collection_name_or_key=None, attach_html=True)
+        self.assertEqual(result["status"], "added")
+
+    def test_capture_arxiv_title_is_read_only_until_confirmed(self):
+        candidates = [{"arxiv_id": "2401.01234", "title": "Candidate"}]
+
+        with (
+            mock.patch.object(operations, "search_arxiv", return_value={"query": "Candidate", "total": 1, "candidates": candidates}) as search,
+            mock.patch.object(operations, "import_arxiv") as import_item,
+        ):
+            result = operations.op_capture_arxiv("Candidate")
+
+        search.assert_called_once_with("Candidate", limit=5)
+        import_item.assert_not_called()
+        self.assertEqual(result["status"], "needs_selection")
+        self.assertEqual(result["candidates"], candidates)
+
+    def test_capture_arxiv_confirmed_candidate_writes(self):
+        with mock.patch.object(operations, "op_arxiv", return_value={"status": "added", "item_key": "ABC12345"}) as op_arxiv:
+            result = operations.op_capture_arxiv(
+                "Candidate title",
+                confirmed_arxiv_id="2401.01234",
+                collection="Inbox",
+                attach_html=False,
+            )
+
+        op_arxiv.assert_called_once_with(
+            "2401.01234",
+            collection_name_or_key="Inbox",
+            attach_html=False,
+            force=False,
+        )
+        self.assertEqual(result, {"status": "added", "item_key": "ABC12345"})
+
+    def test_attach_snapshot_operation_uses_debug_bridge(self):
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "db_add_snapshot", return_value="SNAP1234") as add_snapshot,
+        ):
+            result = operations.op_attach_snapshot(
+                "ABC12345",
+                "https://arxiv.org/html/2401.01234v1",
+                title="arXiv HTML Snapshot",
+            )
+
+        add_snapshot.assert_called_once_with(
+            "ABC12345",
+            "https://arxiv.org/html/2401.01234v1",
+            title="arXiv HTML Snapshot",
+        )
+        self.assertEqual(
+            result,
+            {
+                "snapshot_key": "SNAP1234",
+                "url": "https://arxiv.org/html/2401.01234v1",
+                "title": "arXiv HTML Snapshot",
+            },
+        )
 
     def test_fetch_pdfs_local_mode_preserves_debug_bridge_guard(self):
         with (
@@ -153,6 +279,28 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             add_collection=None,
         )
         self.assertEqual(result, expected)
+
+        with mock.patch.object(server, "op_attach_snapshot", return_value={"snapshot_key": "SNAP1234"}) as op_snapshot:
+            result = server.zotero_attach_snapshot("ABC12345", "https://arxiv.org/html/2401.01234v1", title="HTML")
+        op_snapshot.assert_called_once_with("ABC12345", "https://arxiv.org/html/2401.01234v1", title="HTML")
+        self.assertEqual(result, {"snapshot_key": "SNAP1234"})
+
+        with mock.patch.object(server, "op_search_arxiv", return_value={"total": 0, "candidates": []}) as op_search:
+            result = server.zotero_search_arxiv("needle", limit=4)
+        op_search.assert_called_once_with("needle", limit=4)
+        self.assertEqual(result, {"total": 0, "candidates": []})
+
+        expected_capture = {"status": "needs_selection", "candidates": []}
+        with mock.patch.object(server, "op_capture_arxiv", return_value=expected_capture) as op_capture:
+            result = server.zotero_capture_arxiv("needle", collection="Inbox", attach_html=False)
+        op_capture.assert_called_once_with(
+            "needle",
+            confirmed_arxiv_id=None,
+            collection="Inbox",
+            attach_html=False,
+            force=False,
+        )
+        self.assertEqual(result, expected_capture)
 
     def test_add_identifier_cleans_translated_item_and_posts_json(self):
         translated = {

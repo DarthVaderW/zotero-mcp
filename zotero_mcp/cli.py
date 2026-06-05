@@ -3,7 +3,8 @@
 
 Local debug-bridge commands (require ZOTERO_DEBUG_BRIDGE_TOKEN):
   ping, items, search, get, collections, tags, children,
-  create-item, attach-pdf, arxiv, delete, fetch-pdfs --key --file
+  create-item, attach-pdf, attach-snapshot, search-arxiv, capture-arxiv,
+  arxiv, delete, fetch-pdfs --key --file
 
 Web API commands (require ZOTERO_API_KEY + ZOTERO_USER_ID|ZOTERO_GROUP_ID):
   add-doi, add-isbn, add-pmid, update, export, batch-add,
@@ -23,7 +24,9 @@ from zotero_mcp.operations import (
     op_add_identifier,
     op_arxiv,
     op_attach_pdf,
+    op_attach_snapshot,
     op_batch_add,
+    op_capture_arxiv,
     op_check_pdfs,
     op_children,
     op_collections,
@@ -37,6 +40,7 @@ from zotero_mcp.operations import (
     op_items,
     op_ping,
     op_search,
+    op_search_arxiv,
     op_tags,
     op_update_item,
 )
@@ -181,12 +185,55 @@ def cmd_attach_pdf(args):
         print(result["attachment_key"])
 
 
+def cmd_attach_snapshot(args):
+    result = op_attach_snapshot(args.key, args.url, title=args.title)
+    if _json_mode:
+        _json_print(result)
+    else:
+        print(result["snapshot_key"])
+
+
 def cmd_arxiv(args):
-    result = op_arxiv(args.arxiv, collection_name_or_key=args.collection)
+    result = op_arxiv(
+        args.arxiv,
+        collection_name_or_key=args.collection,
+        attach_html=not args.no_html,
+        force=args.force,
+    )
     if _json_mode:
         _json_print(result)
     else:
         print(json.dumps(result, ensure_ascii=False))
+
+
+def cmd_search_arxiv(args):
+    result = op_search_arxiv(args.query, limit=args.limit)
+    if _json_mode:
+        _json_print(result)
+        return
+    if not result["candidates"]:
+        print("No arXiv candidates found.")
+        return
+    for index, candidate in enumerate(result["candidates"], 1):
+        authors = ", ".join(candidate.get("authors", [])[:3])
+        score = candidate.get("score", 0)
+        print(f"[{index}] {candidate['arxiv_id']} score={score} {candidate['title']}")
+        if authors:
+            print(f"    {authors}")
+
+
+def cmd_capture_arxiv(args):
+    result = op_capture_arxiv(
+        args.paper,
+        confirmed_arxiv_id=args.confirmed_arxiv_id,
+        collection=args.collection,
+        attach_html=not args.no_html,
+        force=args.force,
+    )
+    if _json_mode:
+        _json_print(result)
+        return
+    print(json.dumps(result, ensure_ascii=False))
 
 
 def cmd_delete(args):
@@ -444,9 +491,27 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--key", required=True, help="Parent item key")
     p.add_argument("--file", required=True, help="Local PDF path")
 
-    p = subparsers.add_parser("arxiv", help="Import arXiv item + local PDF attachment")
+    p = subparsers.add_parser("attach-snapshot", help="Attach web page snapshot via debug-bridge")
+    p.add_argument("--key", required=True, help="Parent item key")
+    p.add_argument("--url", required=True, help="Web page URL")
+    p.add_argument("--title", default="Web Page Snapshot", help="Attachment title")
+
+    p = subparsers.add_parser("arxiv", help="Import arXiv item + local PDF + HTML snapshot")
     p.add_argument("arxiv", help="arXiv ID or URL")
     p.add_argument("--collection", help="Collection name or key")
+    p.add_argument("--no-html", action="store_true", help="Do not try to attach arXiv HTML snapshot")
+    p.add_argument("--force", action="store_true", help="Create even if a matching arXiv item exists")
+
+    p = subparsers.add_parser("search-arxiv", help="Search arXiv by ID, URL, or title")
+    p.add_argument("query", help="arXiv ID/URL or paper title")
+    p.add_argument("--limit", type=int, default=5, help="Max candidates")
+
+    p = subparsers.add_parser("capture-arxiv", help="Capture arXiv by ID/URL or confirmed candidate")
+    p.add_argument("paper", help="arXiv ID/URL or title")
+    p.add_argument("--confirmed-arxiv-id", help="Candidate arXiv ID selected from search-arxiv")
+    p.add_argument("--collection", help="Collection name or key")
+    p.add_argument("--no-html", action="store_true", help="Do not try to attach arXiv HTML snapshot")
+    p.add_argument("--force", action="store_true", help="Create even if a matching arXiv item exists")
 
     p = subparsers.add_parser("delete", help="Delete local items (default: trash)")
     p.add_argument("keys", nargs="+", help="Item key(s)")
@@ -542,8 +607,14 @@ def dispatch(args) -> None:
         cmd_create_item(args)
     elif args.command == "attach-pdf":
         cmd_attach_pdf(args)
+    elif args.command == "attach-snapshot":
+        cmd_attach_snapshot(args)
     elif args.command == "arxiv":
         cmd_arxiv(args)
+    elif args.command == "search-arxiv":
+        cmd_search_arxiv(args)
+    elif args.command == "capture-arxiv":
+        cmd_capture_arxiv(args)
     elif args.command == "delete":
         cmd_delete(args)
     elif args.command in ("add-doi", "add-isbn", "add-pmid"):

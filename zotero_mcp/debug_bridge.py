@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
@@ -156,6 +157,56 @@ def db_get_tags():
 await Zotero.Schema.schemaUpdatePromise;
 const tags = await Zotero.Tags.getAll({DEBUG_BRIDGE_LIBRARY_ID});
 return tags.slice(0, 200).map(t => ({{ name: t.tag, type: t.type }}));
+""")
+
+def db_find_arxiv_item(arxiv_id):
+    base_id = re.sub(r"v\d+$", "", str(arxiv_id), flags=re.IGNORECASE)
+    doi = f"10.48550/arXiv.{base_id}".lower()
+    abs_fragments = [f"/abs/{base_id}", f"/abs/{arxiv_id}"]
+    return debug_bridge(f"""
+await Zotero.Schema.schemaUpdatePromise;
+const lib = {DEBUG_BRIDGE_LIBRARY_ID};
+const target = {{
+  id: {json.dumps(str(arxiv_id))},
+  baseId: {json.dumps(base_id)},
+  doi: {json.dumps(doi)},
+  absFragments: {json.dumps(abs_fragments)}
+}};
+const items = await Zotero.Items.getAll(lib, false);
+const matches = [];
+for (const item of items) {{
+  if (!item || item.deleted || (item.isRegularItem && !item.isRegularItem())) continue;
+  const itemType = Zotero.ItemTypes.getName(item.itemTypeID);
+  if (itemType === "attachment" || itemType === "note") continue;
+  if (item.loadAllData) await item.loadAllData();
+  const itemDoi = (item.getField("DOI") || "").toLowerCase().trim().replace(/\\/$/, "");
+  const itemUrl = (item.getField("url") || "").trim();
+  const archiveLocation = (item.getField("archiveLocation") || "").trim();
+  const extra = (item.getField("extra") || "").trim();
+  const byDoi = itemDoi === target.doi;
+  const byUrl = target.absFragments.some(fragment => {{
+    const index = itemUrl.indexOf(fragment);
+    if (index < 0) return false;
+    const next = itemUrl[index + fragment.length] || "";
+    return !next || next === "v" || next === "?" || next === "#";
+  }});
+  const byArchive = archiveLocation === target.id || archiveLocation === target.baseId;
+  const byExtra = extra.includes(target.id) || extra.includes(target.baseId) || extra.includes(target.doi);
+  if (!(byDoi || byUrl || byArchive || byExtra)) continue;
+  matches.push({{
+    key: item.key,
+    itemType,
+    title: item.getDisplayTitle(),
+    creators: item.getCreators().map(c => c.fieldMode === 1 ? c.lastName : ((c.firstName || "") + " " + (c.lastName || "")).trim()).filter(Boolean).join(", "),
+    dateAdded: item.dateAdded,
+    dateModified: item.dateModified,
+    DOI: item.getField("DOI"),
+    url: item.getField("url"),
+    archiveLocation,
+    match: {{ doi: byDoi, url: byUrl, archiveLocation: byArchive, extra: byExtra }}
+  }});
+}}
+return matches;
 """)
 
 def db_create_item(item_data):
