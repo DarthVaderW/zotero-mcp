@@ -99,6 +99,8 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertNotIn('["itemType", "title"', bridge.call_args.args[0])
         self.assertIn("if (item.loadAllData) await item.loadAllData();", bridge.call_args.args[0])
         self.assertIn('next === "v"', bridge.call_args.args[0])
+        self.assertIn('next === "."', bridge.call_args.args[0])
+        self.assertIn("/pdf/2401.01234", bridge.call_args.args[0])
         self.assertIn("const extraLower = extra.toLowerCase();", bridge.call_args.args[0])
 
     def test_debug_bridge_snapshot_wrapper_accepts_title(self):
@@ -126,6 +128,18 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             result = arxiv._find_arxiv_html_url("2401.01234")
 
         self.assertEqual(result, "https://arxiv.org/html/2401.01234v1")
+
+    def test_fetch_arxiv_metadata_falls_back_on_invalid_xml(self):
+        fallback = {"title": "Fallback", "extra_fields": {"archiveLocation": "2401.01234"}}
+
+        with (
+            mock.patch.object(arxiv, "_read_url", return_value=b"<not-xml"),
+            mock.patch.object(arxiv, "_fetch_arxiv_metadata_from_abs_page", return_value=fallback) as from_abs,
+        ):
+            result = arxiv._fetch_arxiv_metadata("2401.01234")
+
+        from_abs.assert_called_once_with("2401.01234")
+        self.assertEqual(result, fallback)
 
     def test_arxiv_query_value_escape(self):
         self.assertEqual(arxiv._escape_arxiv_query_value('a "quoted" title'), r'a \"quoted\" title')
@@ -176,6 +190,32 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result["html_snapshot_key"], "HTML1234")
         self.assertEqual(result["htmlSnapshotKey"], "HTML1234")
         self.assertEqual(result["arxivHtmlUrl"], "https://arxiv.org/html/2401.01234v1")
+
+    def test_import_arxiv_returns_item_when_pdf_attachment_fails(self):
+        meta = {
+            "itemType": "preprint",
+            "title": "arXiv wrapper test",
+            "url": "https://arxiv.org/abs/2401.01234",
+            "extra_fields": {"DOI": "10.48550/arXiv.2401.01234"},
+            "__pdf_url": "https://arxiv.org/pdf/2401.01234",
+        }
+
+        with (
+            mock.patch.object(arxiv, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)),
+            mock.patch.object(arxiv, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)),
+            mock.patch.object(arxiv, "_find_arxiv_html_url", return_value=None),
+            mock.patch.object(arxiv, "create_item", return_value="ABC12345"),
+            mock.patch.object(arxiv, "db_add_snapshot", return_value="SNAP1234"),
+            mock.patch.object(arxiv, "_download_pdf", return_value=False),
+            mock.patch.object(arxiv, "attach_pdf_from_file") as attach_pdf,
+        ):
+            result = operations.import_arxiv("2401.01234")
+
+        attach_pdf.assert_not_called()
+        self.assertEqual(result["item_key"], "ABC12345")
+        self.assertIsNone(result["attachment_key"])
+        self.assertIsNone(result["pdfAttachmentKey"])
+        self.assertIn("pdf attachment failed: Failed to download arXiv PDF", result["warnings"][0])
 
     def test_attach_arxiv_sidecars_reuses_existing_pdf_and_html(self):
         children = [
@@ -229,6 +269,38 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result["attachment_key"], "PDF12345")
         self.assertEqual(result["html_snapshot_key"], "HTML1234")
         self.assertEqual(result["sidecars"]["pdf"]["status"], "added")
+        self.assertEqual(result["sidecars"]["html"]["status"], "added")
+
+    def test_attach_arxiv_sidecars_does_not_treat_abs_snapshot_as_html(self):
+        children = [
+            {
+                "key": "PDF12345",
+                "itemType": "attachment",
+                "title": "Preprint PDF",
+                "contentType": "application/pdf",
+                "url": "",
+            },
+            {
+                "key": "ABS12345",
+                "itemType": "attachment",
+                "title": "Web Page Snapshot",
+                "contentType": "text/html",
+                "url": "https://arxiv.org/abs/2401.01234",
+            },
+        ]
+
+        with (
+            mock.patch.object(arxiv, "_find_arxiv_html_url", return_value="https://arxiv.org/html/2401.01234v1"),
+            mock.patch.object(arxiv, "db_add_snapshot", return_value="HTML1234") as add_snapshot,
+        ):
+            result = arxiv.attach_arxiv_sidecars("ABC12345", "2401.01234", children=children)
+
+        add_snapshot.assert_called_once_with(
+            "ABC12345",
+            "https://arxiv.org/html/2401.01234v1",
+            title="arXiv HTML Snapshot",
+        )
+        self.assertEqual(result["html_snapshot_key"], "HTML1234")
         self.assertEqual(result["sidecars"]["html"]["status"], "added")
 
     def test_op_arxiv_reuses_existing_item_by_default(self):
@@ -320,6 +392,22 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             "2401.01234",
             collection_name_or_key="Inbox",
             attach_html=False,
+            force=False,
+        )
+        self.assertEqual(result, {"status": "added", "item_key": "ABC12345"})
+
+    def test_capture_arxiv_bare_id_writes(self):
+        with mock.patch.object(operations, "op_arxiv", return_value={"status": "added", "item_key": "ABC12345"}) as op_arxiv:
+            result = operations.op_capture_arxiv(
+                "https://arxiv.org/html/2401.01234v1",
+                collection="Inbox",
+                attach_html=True,
+            )
+
+        op_arxiv.assert_called_once_with(
+            "2401.01234v1",
+            collection_name_or_key="Inbox",
+            attach_html=True,
             force=False,
         )
         self.assertEqual(result, {"status": "added", "item_key": "ABC12345"})

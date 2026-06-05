@@ -168,7 +168,7 @@ return tags.slice(0, 200).map(t => ({{ name: t.tag, type: t.type }}));
 def db_find_arxiv_item(arxiv_id):
     base_id = re.sub(r"v\d+$", "", str(arxiv_id), flags=re.IGNORECASE)
     doi = f"10.48550/arXiv.{base_id}".lower()
-    abs_fragments = [f"/abs/{base_id}", f"/abs/{arxiv_id}"]
+    url_fragments = [f"/abs/{base_id}", f"/abs/{arxiv_id}", f"/pdf/{base_id}", f"/pdf/{arxiv_id}"]
     return debug_bridge(f"""
 await Zotero.Schema.schemaUpdatePromise;
 const lib = {DEBUG_BRIDGE_LIBRARY_ID};
@@ -176,7 +176,7 @@ const target = {{
   id: {json.dumps(str(arxiv_id))},
   baseId: {json.dumps(base_id)},
   doi: {json.dumps(doi)},
-  absFragments: {json.dumps(abs_fragments)}
+  urlFragments: {json.dumps(url_fragments)}
 }};
 const items = await Zotero.Items.getAll(lib, false);
 const matches = [];
@@ -191,11 +191,11 @@ for (const item of items) {{
   const extra = (item.getField("extra") || "").trim();
   const extraLower = extra.toLowerCase();
   const byDoi = itemDoi === target.doi;
-  const byUrl = target.absFragments.some(fragment => {{
+  const byUrl = target.urlFragments.some(fragment => {{
     const index = itemUrl.indexOf(fragment);
     if (index < 0) return false;
     const next = itemUrl[index + fragment.length] || "";
-    return !next || next === "v" || next === "?" || next === "#";
+    return !next || next === "v" || next === "." || next === "?" || next === "#";
   }});
   const byArchive = archiveLocation === target.id || archiveLocation === target.baseId;
   const byExtra = extra.includes(target.id) || extra.includes(target.baseId) || extraLower.includes(target.doi);

@@ -243,7 +243,10 @@ def _fetch_arxiv_metadata(arxiv_id):
         return _fetch_arxiv_metadata_from_abs_page(arxiv_id)
 
     ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
-    root = ET.fromstring(xml_text)
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        return _fetch_arxiv_metadata_from_abs_page(arxiv_id)
     entry = root.find("atom:entry", ns)
     if entry is None:
         raise RuntimeError(f"arXiv metadata not found for {arxiv_id}")
@@ -480,12 +483,15 @@ def import_arxiv(arxiv_id_or_url, collection_name_or_key=None, attach_html=True)
         except Exception as exc:
             warnings.append(f"html snapshot failed: {exc}")
 
+    attachment_key = None
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp_path = tmp.name
     try:
         if not _download_pdf(pdf_url, tmp_path):
             raise RuntimeError(f"Failed to download arXiv PDF: {pdf_url}")
         attachment_key = attach_pdf_from_file(item_key, tmp_path, title="Preprint PDF")
+    except Exception as exc:
+        warnings.append(f"pdf attachment failed: {exc}")
     finally:
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
