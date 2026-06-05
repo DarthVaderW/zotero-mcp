@@ -134,7 +134,13 @@ const result = [];
 for (const id of item.getAttachments()) {{
   const att = Zotero.Items.get(id);
   if (!att) continue;
-  result.push({{ key: att.key, itemType: "attachment", title: att.getDisplayTitle() || "Attachment", contentType: att.getField("contentType") }});
+  result.push({{
+    key: att.key,
+    itemType: "attachment",
+    title: att.getDisplayTitle() || "Attachment",
+    contentType: att.getField("contentType"),
+    url: att.getField("url")
+  }});
 }}
 for (const id of item.getNotes()) {{
   const note = Zotero.Items.get(id);

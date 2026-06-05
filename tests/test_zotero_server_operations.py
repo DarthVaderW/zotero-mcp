@@ -112,6 +112,13 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result, "SNAP1234")
         self.assertIn("arXiv HTML Snapshot", bridge.call_args.args[0])
 
+    def test_debug_bridge_children_include_attachment_url(self):
+        with mock.patch.object(debug_bridge, "debug_bridge", return_value=[]) as bridge:
+            result = debug_bridge.db_get_children("ABC12345")
+
+        self.assertEqual(result, [])
+        self.assertIn('url: att.getField("url")', bridge.call_args.args[0])
+
     def test_find_arxiv_html_url_parses_abs_page_link(self):
         page = b'<a href="/html/2401.01234v1">HTML (experimental)</a>'
 
@@ -170,20 +177,109 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result["htmlSnapshotKey"], "HTML1234")
         self.assertEqual(result["arxivHtmlUrl"], "https://arxiv.org/html/2401.01234v1")
 
+    def test_attach_arxiv_sidecars_reuses_existing_pdf_and_html(self):
+        children = [
+            {
+                "key": "PDF12345",
+                "itemType": "attachment",
+                "title": "Preprint PDF",
+                "contentType": "application/pdf",
+                "url": "",
+            },
+            {
+                "key": "HTML1234",
+                "itemType": "attachment",
+                "title": "arXiv HTML Snapshot",
+                "contentType": "text/html",
+                "url": "https://arxiv.org/html/2401.01234v1",
+            },
+        ]
+
+        with (
+            mock.patch.object(arxiv, "_download_pdf") as download_pdf,
+            mock.patch.object(arxiv, "_find_arxiv_html_url") as find_html,
+            mock.patch.object(arxiv, "db_add_snapshot") as add_snapshot,
+        ):
+            result = arxiv.attach_arxiv_sidecars("ABC12345", "2401.01234v1", children=children)
+
+        download_pdf.assert_not_called()
+        find_html.assert_not_called()
+        add_snapshot.assert_not_called()
+        self.assertEqual(result["attachment_key"], "PDF12345")
+        self.assertEqual(result["html_snapshot_key"], "HTML1234")
+        self.assertEqual(result["sidecars"]["pdf"]["status"], "existing")
+        self.assertEqual(result["sidecars"]["html"]["status"], "existing")
+
+    def test_attach_arxiv_sidecars_adds_missing_pdf_and_html(self):
+        with (
+            mock.patch.object(arxiv, "_download_pdf", return_value=True) as download_pdf,
+            mock.patch.object(arxiv, "attach_pdf_from_file", return_value="PDF12345") as attach_pdf,
+            mock.patch.object(arxiv, "_find_arxiv_html_url", return_value="https://arxiv.org/html/2401.01234v1"),
+            mock.patch.object(arxiv, "db_add_snapshot", return_value="HTML1234") as add_snapshot,
+        ):
+            result = arxiv.attach_arxiv_sidecars("ABC12345", "2401.01234", children=[])
+
+        download_pdf.assert_called_once()
+        attach_pdf.assert_called_once()
+        add_snapshot.assert_called_once_with(
+            "ABC12345",
+            "https://arxiv.org/html/2401.01234v1",
+            title="arXiv HTML Snapshot",
+        )
+        self.assertEqual(result["attachment_key"], "PDF12345")
+        self.assertEqual(result["html_snapshot_key"], "HTML1234")
+        self.assertEqual(result["sidecars"]["pdf"]["status"], "added")
+        self.assertEqual(result["sidecars"]["html"]["status"], "added")
+
     def test_op_arxiv_reuses_existing_item_by_default(self):
         existing = [{"key": "ABC12345", "title": "Existing"}]
+        sidecars = {
+            "attachment_key": "PDF12345",
+            "html_snapshot_key": "HTML1234",
+            "pdfAttachmentKey": "PDF12345",
+            "htmlSnapshotKey": "HTML1234",
+            "arxiv_abs_url": "https://arxiv.org/abs/2401.01234",
+            "arxiv_pdf_url": "https://arxiv.org/pdf/2401.01234",
+            "arxiv_html_url": "https://arxiv.org/html/2401.01234v1",
+            "arxivAbsUrl": "https://arxiv.org/abs/2401.01234",
+            "arxivPdfUrl": "https://arxiv.org/pdf/2401.01234",
+            "arxivHtmlUrl": "https://arxiv.org/html/2401.01234v1",
+            "warnings": [],
+            "sidecars": {"pdf": {"status": "added"}, "html": {"status": "added"}},
+        }
 
         with (
             mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
             mock.patch.object(operations, "db_find_arxiv_item", return_value=existing) as find_item,
+            mock.patch.object(operations, "attach_arxiv_sidecars", return_value=sidecars) as top_up,
             mock.patch.object(operations, "import_arxiv") as import_item,
         ):
             result = operations.op_arxiv("2401.01234")
 
         find_item.assert_called_once_with("2401.01234")
+        top_up.assert_called_once_with("ABC12345", "2401.01234", attach_html=True)
         import_item.assert_not_called()
         self.assertEqual(result["status"], "existing")
         self.assertEqual(result["item_key"], "ABC12345")
+        self.assertEqual(result["attachment_key"], "PDF12345")
+        self.assertEqual(result["html_snapshot_key"], "HTML1234")
+        self.assertEqual(result["sidecars"]["html"]["status"], "added")
+
+    def test_op_arxiv_existing_survives_sidecar_failure(self):
+        existing = [{"key": "ABC12345", "title": "Existing"}]
+
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "db_find_arxiv_item", return_value=existing),
+            mock.patch.object(operations, "attach_arxiv_sidecars", side_effect=RuntimeError("network down")),
+            mock.patch.object(operations, "import_arxiv") as import_item,
+        ):
+            result = operations.op_arxiv("2401.01234")
+
+        import_item.assert_not_called()
+        self.assertEqual(result["status"], "existing")
+        self.assertEqual(result["item_key"], "ABC12345")
+        self.assertIn("sidecar top-up failed: network down", result["warnings"])
 
     def test_op_arxiv_force_skips_duplicate_check(self):
         with (

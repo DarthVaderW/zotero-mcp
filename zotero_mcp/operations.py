@@ -22,6 +22,7 @@ from zotero_mcp.debug_bridge import (
 )
 from zotero_mcp.errors import CommandError as CommandError
 from zotero_mcp.arxiv import _extract_arxiv_id as _extract_arxiv_id
+from zotero_mcp.arxiv import attach_arxiv_sidecars as attach_arxiv_sidecars
 from zotero_mcp.arxiv import import_arxiv as import_arxiv
 from zotero_mcp.arxiv import search_arxiv as search_arxiv
 from zotero_mcp.doi_ops import (
@@ -127,7 +128,7 @@ def op_attach_pdf(key, file, title="Full Text PDF"):
     require_item_key(key)
     return {"attachment_key": attach_pdf_from_file(key, file, title=title)}
 
-def _existing_arxiv_result(arxiv_id, existing, collection=None):
+def _existing_arxiv_result(arxiv_id, existing, collection=None, attach_html=True):
     item = existing[0] if existing else {}
     item_key = item.get("key")
     collection_result = None
@@ -137,12 +138,33 @@ def _existing_arxiv_result(arxiv_id, existing, collection=None):
             collection_result = db_add_item_to_collection(item_key, collection)
         except Exception as exc:
             warnings.append(f"collection update failed: {exc}")
+    sidecar_result = {}
+    if item_key:
+        try:
+            sidecar_result = attach_arxiv_sidecars(item_key, arxiv_id, attach_html=attach_html)
+            warnings.extend(sidecar_result.get("warnings", []))
+        except Exception as exc:
+            warnings.append(f"sidecar top-up failed: {exc}")
     return {
         "status": "existing",
         "arxiv_id": arxiv_id,
         "arxivId": arxiv_id,
         "item_key": item_key,
         "zoteroItemKey": item_key,
+        "attachment_key": sidecar_result.get("attachment_key"),
+        "snapshot_key": sidecar_result.get("snapshot_key"),
+        "abstract_snapshot_key": sidecar_result.get("abstract_snapshot_key"),
+        "html_snapshot_key": sidecar_result.get("html_snapshot_key"),
+        "arxiv_abs_url": sidecar_result.get("arxiv_abs_url"),
+        "arxiv_pdf_url": sidecar_result.get("arxiv_pdf_url"),
+        "arxiv_html_url": sidecar_result.get("arxiv_html_url"),
+        "pdfAttachmentKey": sidecar_result.get("pdfAttachmentKey"),
+        "abstractSnapshotKey": sidecar_result.get("abstractSnapshotKey"),
+        "htmlSnapshotKey": sidecar_result.get("htmlSnapshotKey"),
+        "arxivAbsUrl": sidecar_result.get("arxivAbsUrl"),
+        "arxivPdfUrl": sidecar_result.get("arxivPdfUrl"),
+        "arxivHtmlUrl": sidecar_result.get("arxivHtmlUrl"),
+        "sidecars": sidecar_result.get("sidecars", {}),
         "existing": item,
         "matches": existing,
         "collection": collection_result,
@@ -155,7 +177,12 @@ def op_arxiv(arxiv, collection_name_or_key=None, attach_html=True, force=False):
     if not force:
         existing = db_find_arxiv_item(arxiv_id) or []
         if existing:
-            return _existing_arxiv_result(arxiv_id, existing, collection=collection_name_or_key)
+            return _existing_arxiv_result(
+                arxiv_id,
+                existing,
+                collection=collection_name_or_key,
+                attach_html=attach_html,
+            )
     result = import_arxiv(arxiv_id, collection_name_or_key=collection_name_or_key, attach_html=attach_html)
     result.setdefault("status", "added")
     return result

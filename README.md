@@ -151,8 +151,10 @@ python3 -m zotero_mcp.cli attach-snapshot --key ABC12345 --url https://arxiv.org
 `search-arxiv` is read-only. `capture-arxiv` writes only when the input is an
 arXiv ID/URL or `--confirmed-arxiv-id` is supplied; title-only input returns
 candidates and does not write to Zotero. arXiv imports check for existing local
-items by arXiv ID/DOI/URL before creating a new item; use `--force` only when a
-duplicate is intentional.
+items by arXiv ID/DOI/URL before creating a new item. Existing items are reused
+and missing sidecars are topped up: PDF is attached when absent, and arXiv HTML
+snapshot is attached when available unless `--no-html` is set. Use `--force`
+only when a duplicate parent item is intentional.
 
 ## Troubleshooting
 
