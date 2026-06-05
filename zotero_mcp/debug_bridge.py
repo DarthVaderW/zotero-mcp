@@ -183,6 +183,7 @@ for (const item of items) {{
   const itemUrl = (item.getField("url") || "").trim();
   const archiveLocation = (item.getField("archiveLocation") || "").trim();
   const extra = (item.getField("extra") || "").trim();
+  const extraLower = extra.toLowerCase();
   const byDoi = itemDoi === target.doi;
   const byUrl = target.absFragments.some(fragment => {{
     const index = itemUrl.indexOf(fragment);
@@ -191,7 +192,7 @@ for (const item of items) {{
     return !next || next === "v" || next === "?" || next === "#";
   }});
   const byArchive = archiveLocation === target.id || archiveLocation === target.baseId;
-  const byExtra = extra.includes(target.id) || extra.includes(target.baseId) || extra.includes(target.doi);
+  const byExtra = extra.includes(target.id) || extra.includes(target.baseId) || extraLower.includes(target.doi);
   if (!(byDoi || byUrl || byArchive || byExtra)) continue;
   matches.push({{
     key: item.key,

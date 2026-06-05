@@ -99,6 +99,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertNotIn('["itemType", "title"', bridge.call_args.args[0])
         self.assertIn("if (item.loadAllData) await item.loadAllData();", bridge.call_args.args[0])
         self.assertIn('next === "v"', bridge.call_args.args[0])
+        self.assertIn("const extraLower = extra.toLowerCase();", bridge.call_args.args[0])
 
     def test_debug_bridge_snapshot_wrapper_accepts_title(self):
         with mock.patch.object(debug_bridge, "debug_bridge", return_value="SNAP1234") as bridge:
@@ -121,6 +122,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
     def test_arxiv_query_value_escape(self):
         self.assertEqual(arxiv._escape_arxiv_query_value('a "quoted" title'), r'a \"quoted\" title')
+
+    def test_arxiv_title_score_uses_metadata_similarity(self):
+        self.assertGreater(arxiv._title_score("Retargeting Matters", "Retargeting Matters"), 0.9)
 
     def test_debug_bridge_attachment_wrapper_checks_local_path(self):
         pdf = ROOT / "tests" / "fixture.pdf"

@@ -47,7 +47,7 @@ def _read_url(req, timeout=30, retries=1):
 
 def _extract_arxiv_id(arxiv_id_or_url):
     s = arxiv_id_or_url.strip()
-    m = re.search(r"arxiv\.org/(abs|pdf)/([0-9]{4}\.[0-9]{4,5}(v\d+)?)", s, re.I)
+    m = re.search(r"arxiv\.org/(abs|pdf|html)/([0-9]{4}\.[0-9]{4,5}(v\d+)?)", s, re.I)
     if m:
         return m.group(2)
     m = re.match(r"^([0-9]{4}\.[0-9]{4,5}(v\d+)?)$", s, re.I)

@@ -74,6 +74,7 @@ class ZoteroCLITest(unittest.TestCase):
     def test_arxiv_id_extract(self):
         self.assertEqual(self.mod._extract_arxiv_id("2401.01234"), "2401.01234")
         self.assertEqual(self.mod._extract_arxiv_id("https://arxiv.org/abs/2401.01234v2"), "2401.01234v2")
+        self.assertEqual(self.mod._extract_arxiv_id("https://arxiv.org/html/2401.01234v2"), "2401.01234v2")
 
     def test_validators(self):
         self.assertTrue(self.mod.validate_doi("10.1000/abc"))
