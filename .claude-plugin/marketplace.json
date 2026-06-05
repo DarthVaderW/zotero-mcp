@@ -10,7 +10,7 @@
       "source": "./plugins/zotero-mcp",
       "displayName": "Zotero MCP",
       "description": "Connect Claude Code to local Zotero tools.",
-      "version": "0.2.2",
+      "version": "0.2.3",
       "author": {
         "name": "Haotian Wang"
       },
