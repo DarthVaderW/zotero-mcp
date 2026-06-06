@@ -4,7 +4,7 @@
 Local debug-bridge commands (require ZOTERO_DEBUG_BRIDGE_TOKEN):
   ping, items, search, get, collections, tags, children,
   create-item, attach-pdf, attach-snapshot, search-arxiv, capture-arxiv,
-  arxiv, delete, fetch-pdfs --key --file
+  arxiv, attachment-text, delete, fetch-pdfs --key --file
 
 Web API commands (require ZOTERO_API_KEY + ZOTERO_USER_ID|ZOTERO_GROUP_ID):
   add-doi, add-isbn, add-pmid, update, export, batch-add,
@@ -25,6 +25,7 @@ from zotero_mcp.operations import (
     op_arxiv,
     op_attach_pdf,
     op_attach_snapshot,
+    op_attachment_text,
     op_batch_add,
     op_capture_arxiv,
     op_check_pdfs,
@@ -166,6 +167,20 @@ def cmd_children(args):
             print(f"[ATT] [{c['key']}] {c.get('title', 'Attachment')} [{c.get('contentType', '?')}]")
         else:
             print(f"[NOTE] [{c['key']}] {c.get('title', 'Note')}")
+
+
+def cmd_attachment_text(args):
+    result = op_attachment_text(args.key, max_chars=args.max_chars, prefer_cache=not args.no_cache)
+    if _json_mode:
+        _json_print(result)
+        return
+    for warning in result.get("warnings", []):
+        print(f"Warning: {warning}", file=sys.stderr)
+    if result.get("text"):
+        print(result["text"])
+    else:
+        print("No readable attachment text found.", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_create_item(args):
@@ -484,6 +499,11 @@ def build_parser() -> argparse.ArgumentParser:
     p = subparsers.add_parser("children", help="List local child items")
     p.add_argument("key", help="Parent item key")
 
+    p = subparsers.add_parser("attachment-text", help="Read local attachment text/cache by attachment key")
+    p.add_argument("key", help="Attachment item key")
+    p.add_argument("--max-chars", type=int, default=20000, help="Maximum characters to return")
+    p.add_argument("--no-cache", action="store_true", help="Read attachment file before Zotero full-text cache")
+
     p = subparsers.add_parser("create-item", help="Create local item via debug-bridge")
     p.add_argument("--meta-json", default="{}", help="Item metadata JSON string")
 
@@ -603,6 +623,8 @@ def dispatch(args) -> None:
         cmd_tags(args)
     elif args.command == "children":
         cmd_children(args)
+    elif args.command == "attachment-text":
+        cmd_attachment_text(args)
     elif args.command == "create-item":
         cmd_create_item(args)
     elif args.command == "attach-pdf":

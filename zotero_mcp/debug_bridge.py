@@ -151,6 +151,47 @@ return result;
 """
     return debug_bridge(js)
 
+def db_get_attachment_file(key):
+    js = f"""
+await Zotero.Schema.schemaUpdatePromise;
+const item = Zotero.Items.getByLibraryAndKey({DEBUG_BRIDGE_LIBRARY_ID}, {json.dumps(key)});
+if (!item) return null;
+const itemType = Zotero.ItemTypes.getName(item.itemTypeID);
+const isAttachment = item.isAttachment ? item.isAttachment() : itemType === "attachment";
+if (!isAttachment) throw new Error("Item is not an attachment");
+if (item.loadAllData) await item.loadAllData();
+let filePath = "";
+try {{
+  if (item.getFilePathAsync) filePath = await item.getFilePathAsync();
+}} catch (e) {{}}
+if (!filePath) {{
+  try {{
+    if (item.getFilePath) filePath = item.getFilePath();
+  }} catch (e) {{}}
+}}
+let storageDirectory = "";
+try {{
+  const dir = Zotero.Attachments.getStorageDirectory(item);
+  if (dir) storageDirectory = dir.path || String(dir);
+}} catch (e) {{}}
+let parentKey = "";
+try {{
+  const parent = item.parentItemID ? Zotero.Items.get(item.parentItemID) : null;
+  if (parent) parentKey = parent.key;
+}} catch (e) {{}}
+return {{
+  key: item.key,
+  parentKey,
+  itemType,
+  title: item.getDisplayTitle() || "Attachment",
+  contentType: item.getField("contentType"),
+  url: item.getField("url"),
+  filePath,
+  storageDirectory
+}};
+"""
+    return debug_bridge(js)
+
 def db_get_collections():
     return debug_bridge(f"""
 await Zotero.Schema.schemaUpdatePromise;

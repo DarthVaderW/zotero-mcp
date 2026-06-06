@@ -156,6 +156,16 @@ and missing sidecars are topped up: PDF is attached when absent, and arXiv HTML
 snapshot is attached when available unless `--no-html` is set. Use `--force`
 only when a duplicate parent item is intentional.
 
+For model reading workflows, use the MCP tool `zotero_get_attachment_text` with
+an attachment key. It asks local Zotero for the attachment's real file path,
+then prefers Zotero's `.zotero-ft-cache` when present. Store Zotero attachment
+keys in upstream notes or tables instead of hard-coding local
+`Zotero/storage/...` paths. The matching CLI command is:
+
+```bash
+python3 -m zotero_mcp.cli attachment-text <attachment-key> --max-chars 20000
+```
+
 ## Troubleshooting
 
 If Claude Code reports that the MCP failed to start, check `uv` before

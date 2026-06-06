@@ -5,10 +5,14 @@ Run:
   python3 tests/test_zotero_cli.py
 """
 
+import contextlib
+import io
 import pathlib
 import subprocess
 import sys
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -24,6 +28,7 @@ class ZoteroCLITest(unittest.TestCase):
     def setUpClass(cls):
         cls.mod = load_module("zotero_mcp.operations")
         cls.local_ops = load_module("zotero_mcp.local_ops")
+        cls.cli = load_module("zotero_mcp.cli")
 
     def run_cli(self, *args):
         proc = subprocess.run(
@@ -70,6 +75,62 @@ class ZoteroCLITest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0)
         self.assertIn("--confirmed-arxiv-id", proc.stdout)
         self.assertIn("--no-html", proc.stdout)
+
+    def test_help_attachment_text(self):
+        proc = self.run_cli("attachment-text", "--help")
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("--max-chars", proc.stdout)
+        self.assertIn("--no-cache", proc.stdout)
+
+    def test_attachment_text_cli_prints_text(self):
+        args = SimpleNamespace(key="ATT12345", max_chars=20000, no_cache=False)
+        stdout = io.StringIO()
+
+        with (
+            mock.patch.object(
+                self.cli,
+                "op_attachment_text",
+                return_value={"text": "readable text", "warnings": [], "source": "zotero-ft-cache"},
+            ),
+            contextlib.redirect_stdout(stdout),
+        ):
+            self.cli.cmd_attachment_text(args)
+
+        self.assertEqual(stdout.getvalue(), "readable text\n")
+
+    def test_attachment_text_cli_no_cache_flag(self):
+        args = SimpleNamespace(key="ATT12345", max_chars=123, no_cache=True)
+
+        with (
+            mock.patch.object(
+                self.cli,
+                "op_attachment_text",
+                return_value={"text": "readable text", "warnings": [], "source": "attachment-file"},
+            ) as attachment_text,
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            self.cli.cmd_attachment_text(args)
+
+        attachment_text.assert_called_once_with("ATT12345", max_chars=123, prefer_cache=False)
+
+    def test_attachment_text_cli_exits_nonzero_without_text(self):
+        args = SimpleNamespace(key="ATT12345", max_chars=20000, no_cache=False)
+        stderr = io.StringIO()
+
+        with (
+            mock.patch.object(
+                self.cli,
+                "op_attachment_text",
+                return_value={"text": "", "warnings": ["PDF attachment has no Zotero full-text cache"], "source": None},
+            ),
+            contextlib.redirect_stderr(stderr),
+        ):
+            with self.assertRaises(SystemExit) as caught:
+                self.cli.cmd_attachment_text(args)
+
+        self.assertEqual(caught.exception.code, 1)
+        self.assertIn("Warning: PDF attachment", stderr.getvalue())
+        self.assertIn("No readable attachment text found.", stderr.getvalue())
 
     def test_arxiv_id_extract(self):
         self.assertEqual(self.mod._extract_arxiv_id("2401.01234"), "2401.01234")

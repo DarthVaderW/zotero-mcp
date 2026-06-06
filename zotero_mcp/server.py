@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from zotero_mcp.operations import (
     op_add_identifier,
     op_arxiv,
+    op_attachment_text,
     op_attach_pdf,
     op_attach_snapshot,
     op_batch_add,
@@ -166,6 +167,16 @@ def zotero_list_tags() -> dict[str, Any]:
 def zotero_get_children(key: str) -> dict[str, Any]:
     """List child items (attachments and notes) of a local Zotero parent item."""
     return op_children(key)
+
+
+@mcp.tool()
+def zotero_get_attachment_text(
+    key: str,
+    max_chars: int = 20000,
+    prefer_cache: bool = True,
+) -> dict[str, Any]:
+    """Read local attachment text, preferring Zotero's full-text cache when available."""
+    return op_attachment_text(key, max_chars=max_chars, prefer_cache=prefer_cache)
 
 
 @mcp.tool()

@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 import urllib.error
 from unittest import mock
@@ -120,6 +121,143 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
         self.assertEqual(result, [])
         self.assertIn('url: att.getField("url")', bridge.call_args.args[0])
+
+    def test_debug_bridge_attachment_file_wrapper_uses_zotero_path_api(self):
+        payload = {
+            "key": "ATT12345",
+            "filePath": "/tmp/zotero/ATT12345/paper.html",
+            "storageDirectory": "/tmp/zotero/ATT12345",
+        }
+
+        with mock.patch.object(debug_bridge, "debug_bridge", return_value=payload) as bridge:
+            result = debug_bridge.db_get_attachment_file("ATT12345")
+
+        self.assertEqual(result, payload)
+        self.assertIn("getFilePathAsync", bridge.call_args.args[0])
+        self.assertIn("Zotero.Attachments.getStorageDirectory", bridge.call_args.args[0])
+
+    def test_attachment_text_prefers_zotero_full_text_cache(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            html = root / "paper.html"
+            cache = root / ".zotero-ft-cache"
+            html.write_text("<html>raw html</html>", encoding="utf-8")
+            cache.write_text("clean full text", encoding="utf-8")
+
+            with (
+                mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+                mock.patch.object(
+                    operations,
+                    "db_get_attachment_file",
+                    return_value={
+                        "key": "ATT12345",
+                        "title": "arXiv HTML Snapshot",
+                        "contentType": "text/html",
+                        "filePath": str(html),
+                        "storageDirectory": str(root),
+                    },
+                ),
+            ):
+                result = server.zotero_get_attachment_text("ATT12345")
+
+        self.assertEqual(result["source"], "zotero-ft-cache")
+        self.assertEqual(result["text"], "clean full text")
+        self.assertTrue(result["cacheExists"])
+        self.assertFalse(result["truncated"])
+
+    def test_attachment_text_truncates_and_can_read_raw_file(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            html = root / "paper.html"
+            html.write_text("abcdef", encoding="utf-8")
+
+            with (
+                mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+                mock.patch.object(
+                    operations,
+                    "db_get_attachment_file",
+                    return_value={
+                        "key": "ATT12345",
+                        "title": "arXiv HTML Snapshot",
+                        "contentType": "text/html",
+                        "filePath": str(html),
+                        "storageDirectory": str(root),
+                    },
+                ),
+            ):
+                result = server.zotero_get_attachment_text("ATT12345", max_chars=3, prefer_cache=False)
+
+        self.assertEqual(result["source"], "attachment-file")
+        self.assertEqual(result["text"], "abc")
+        self.assertTrue(result["truncated"])
+
+    def test_attachment_text_rejects_bad_max_chars_cleanly(self):
+        with mock.patch.object(operations, "ensure_debug_bridge", return_value=None) as bridge:
+            with self.assertRaisesRegex(RuntimeError, "max_chars"):
+                operations.op_attachment_text("ATT12345", max_chars=0)
+        bridge.assert_not_called()
+
+    def test_attachment_text_rejects_unexpected_bridge_response(self):
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "db_get_attachment_file", return_value="not-a-dict"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "unexpected attachment response"):
+                operations.op_attachment_text("ATT12345")
+
+    def test_attachment_text_warns_for_binary_without_cache(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            pdf = root / "paper.pdf"
+            pdf.write_bytes(b"%PDF-1.7")
+
+            with (
+                mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+                mock.patch.object(
+                    operations,
+                    "db_get_attachment_file",
+                    return_value={
+                        "key": "ATT12345",
+                        "title": "PDF",
+                        "contentType": "application/pdf",
+                        "filePath": str(pdf),
+                        "storageDirectory": str(root),
+                    },
+                ),
+            ):
+                result = server.zotero_get_attachment_text("ATT12345", prefer_cache=False)
+
+        self.assertIsNone(result["source"])
+        self.assertEqual(result["text"], "")
+        self.assertIn("not text-readable", result["warnings"][0])
+
+    def test_attachment_text_falls_back_to_cache_when_raw_file_is_binary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            pdf = root / "paper"
+            cache = root / ".zotero-ft-cache"
+            pdf.write_bytes(b"%PDF-1.7")
+            cache.write_text("indexed pdf text", encoding="utf-8")
+
+            with (
+                mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+                mock.patch.object(
+                    operations,
+                    "db_get_attachment_file",
+                    return_value={
+                        "key": "ATT12345",
+                        "title": "PDF",
+                        "contentType": "application/pdf",
+                        "filePath": str(pdf),
+                        "storageDirectory": str(root),
+                    },
+                ),
+            ):
+                result = server.zotero_get_attachment_text("ATT12345", prefer_cache=False)
+
+        self.assertEqual(result["source"], "zotero-ft-cache")
+        self.assertEqual(result["text"], "indexed pdf text")
+        self.assertTrue(result["cacheExists"])
 
     def test_find_arxiv_html_url_parses_abs_page_link(self):
         page = b'<a href="/html/2401.01234v1">HTML (experimental)</a>'
