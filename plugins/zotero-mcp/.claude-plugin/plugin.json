@@ -1,7 +1,7 @@
 {
   "name": "zotero-mcp",
   "displayName": "Zotero MCP",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Connect Claude Code to local Zotero tools.",
   "author": {
     "name": "Haotian Wang",
