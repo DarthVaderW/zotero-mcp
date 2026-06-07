@@ -106,6 +106,72 @@ return items;
 """
     return debug_bridge(js)
 
+def db_find_item_by_identifier(identifier, id_type="doi", title=None):
+    normalized_id = str(identifier or "").strip()
+    normalized_type = str(id_type or "doi").lower().strip()
+    title = str(title or "").strip()
+    if normalized_type not in {"doi", "isbn", "pmid"}:
+        raise RuntimeError("id_type must be one of: doi, isbn, pmid")
+
+    return debug_bridge(f"""
+await Zotero.Schema.schemaUpdatePromise;
+const lib = {DEBUG_BRIDGE_LIBRARY_ID};
+const target = {{
+  identifier: {json.dumps(normalized_id)},
+  idType: {json.dumps(normalized_type)},
+  title: {json.dumps(title)}
+}};
+function cleanDoi(value) {{
+  return (value || "").toLowerCase().trim().replace(/\\/$/, "");
+}}
+function cleanIsbn(value) {{
+  return (value || "").toUpperCase().replace(/[^0-9X]/g, "");
+}}
+function cleanText(value) {{
+  return (value || "").toLowerCase().replace(/[^\\p{{L}}\\p{{N}}]+/gu, " ").replace(/\\s+/g, " ").trim();
+}}
+const targetDoi = cleanDoi(target.identifier);
+const targetIsbn = cleanIsbn(target.identifier);
+const targetTitle = cleanText(target.title);
+const targetPmid = target.identifier.trim();
+const items = await Zotero.Items.getAll(lib, false);
+const matches = [];
+for (const item of items) {{
+  if (!item || item.deleted || (item.isRegularItem && !item.isRegularItem())) continue;
+  const itemType = Zotero.ItemTypes.getName(item.itemTypeID);
+  if (itemType === "attachment" || itemType === "note") continue;
+  if (item.loadAllData) await item.loadAllData();
+  const itemDoi = cleanDoi(item.getField("DOI"));
+  const itemIsbn = cleanIsbn(item.getField("ISBN"));
+  const extra = (item.getField("extra") || "").trim();
+  const url = (item.getField("url") || "").trim();
+  const itemTitle = cleanText(item.getDisplayTitle());
+  const byDoi = target.idType === "doi" && itemDoi && itemDoi === targetDoi;
+  const byIsbn = target.idType === "isbn" && itemIsbn && targetIsbn && itemIsbn.includes(targetIsbn);
+  const byPmid = target.idType === "pmid" && targetPmid && (
+    extra.includes(`PMID: ${{targetPmid}}`) ||
+    extra.includes(`PMID ${{targetPmid}}`) ||
+    url.includes(`/pubmed/${{targetPmid}}`) ||
+    url.includes(`pubmed.ncbi.nlm.nih.gov/${{targetPmid}}`)
+  );
+  const byTitle = targetTitle && itemTitle && itemTitle === targetTitle;
+  if (!(byDoi || byIsbn || byPmid || byTitle)) continue;
+  matches.push({{
+    key: item.key,
+    itemType,
+    title: item.getDisplayTitle(),
+    creators: item.getCreators().map(c => c.fieldMode === 1 ? c.lastName : ((c.firstName || "") + " " + (c.lastName || "")).trim()).filter(Boolean).join(", "),
+    dateAdded: item.dateAdded,
+    dateModified: item.dateModified,
+    DOI: item.getField("DOI"),
+    ISBN: item.getField("ISBN"),
+    url,
+    match: {{ doi: byDoi, isbn: byIsbn, pmid: byPmid, title: byTitle }}
+  }});
+}}
+return matches;
+""")
+
 def db_get_item(key):
     js = f"""
 await Zotero.Schema.schemaUpdatePromise;
@@ -266,13 +332,25 @@ await Zotero.Schema.schemaUpdatePromise;
 const item = new Zotero.Item({json.dumps(payload.get("itemType"))});
 item.libraryID = {DEBUG_BRIDGE_LIBRARY_ID};
 const data = {json.dumps(payload)};
+const skippedFields = [];
 for (const [k, v] of Object.entries(data)) {{
   if (k === "itemType" || k.startsWith("__") || v === null || v === undefined) continue;
   if (k === "creators" && Array.isArray(v)) {{ item.setCreators(v); continue; }}
-  item.setField(k, v);
+  if (k === "tags" && Array.isArray(v)) {{
+    for (const tag of v) {{
+      const tagName = typeof tag === "string" ? tag : (tag && tag.tag);
+      if (tagName) item.addTag(tagName);
+    }}
+    continue;
+  }}
+  try {{
+    item.setField(k, v);
+  }} catch (err) {{
+    skippedFields.push({{ field: k, error: String(err && err.message ? err.message : err) }});
+  }}
 }}
 await item.saveTx();
-return {{ key: item.key, success: true }};
+return {{ key: item.key, success: true, skippedFields }};
 """
     return debug_bridge(js)
 

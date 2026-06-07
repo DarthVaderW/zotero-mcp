@@ -82,10 +82,14 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
     def test_debug_bridge_wrappers_execute_without_orphaned_names(self):
         with mock.patch.object(debug_bridge, "debug_bridge", return_value={"key": "ABC12345", "success": True}) as bridge:
-            result = debug_bridge.db_create_item({"itemType": "book", "title": "Wrapper test"})
+            result = debug_bridge.db_create_item(
+                {"itemType": "book", "title": "Wrapper test", "tags": [{"tag": "reading"}]}
+            )
 
         self.assertEqual(result, {"key": "ABC12345", "success": True})
         self.assertIn('new Zotero.Item("book")', bridge.call_args.args[0])
+        self.assertIn("item.addTag(tagName)", bridge.call_args.args[0])
+        self.assertNotIn('item.setField("tags"', bridge.call_args.args[0])
 
         with self.assertRaisesRegex(RuntimeError, "itemType is required"):
             debug_bridge.db_create_item({"title": "Missing type"})
@@ -103,6 +107,21 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertIn('next === "."', bridge.call_args.args[0])
         self.assertIn("/pdf/2401.01234", bridge.call_args.args[0])
         self.assertIn("const extraLower = extra.toLowerCase();", bridge.call_args.args[0])
+
+        with mock.patch.object(debug_bridge, "debug_bridge", return_value=[]) as bridge:
+            result = debug_bridge.db_find_item_by_identifier(
+                "10.1234/Example/",
+                id_type="doi",
+                title="Known Paper",
+            )
+
+        self.assertEqual(result, [])
+        js = bridge.call_args.args[0]
+        self.assertIn('target.idType === "doi"', js)
+        self.assertIn('item.getField("DOI")', js)
+        self.assertIn("Zotero.Items.getAll(lib, false)", js)
+        self.assertIn("if (item.loadAllData) await item.loadAllData();", js)
+        self.assertIn("byTitle", js)
 
     def test_debug_bridge_snapshot_wrapper_accepts_title(self):
         with mock.patch.object(debug_bridge, "debug_bridge", return_value="SNAP1234") as bridge:
@@ -616,6 +635,30 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         op_search.assert_called_once_with("needle", limit=4)
         self.assertEqual(result, {"total": 0, "candidates": []})
 
+        expected_import = {"status": "added", "item_key": "NEW12345"}
+        with mock.patch.object(server, "op_import_identifier", return_value=expected_import) as op_import:
+            result = server.zotero_import_by_identifier(
+                "10.1234/example",
+                collection="Inbox",
+                tags="reading",
+                attach_pdf=False,
+            )
+        op_import.assert_called_once_with(
+            "10.1234/example",
+            id_type="doi",
+            collection="Inbox",
+            tags="reading",
+            force=False,
+            attach_pdf=False,
+        )
+        self.assertEqual(result, expected_import)
+
+        expected_sidecars = {"status": "updated", "item_key": "ABC12345"}
+        with mock.patch.object(server, "op_attach_arxiv_sidecars", return_value=expected_sidecars) as op_sidecars:
+            result = server.zotero_attach_arxiv_sidecars("ABC12345", "2401.01234", attach_html=False)
+        op_sidecars.assert_called_once_with("ABC12345", "2401.01234", attach_html=False)
+        self.assertEqual(result, expected_sidecars)
+
         expected_capture = {"status": "needs_selection", "candidates": []}
         with mock.patch.object(server, "op_capture_arxiv", return_value=expected_capture) as op_capture:
             result = server.zotero_capture_arxiv("needle", collection="Inbox", attach_html=False)
@@ -658,6 +701,135 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(posted_items[0]["tags"], [{"tag": "existing"}, {"tag": "reading"}, {"tag": "priority"}])
         for removed_field in ("key", "version", "relations"):
             self.assertNotIn(removed_field, posted_items[0])
+
+    def test_import_identifier_creates_local_item_without_web_api_key(self):
+        translated = {
+            "itemType": "journalArticle",
+            "title": "Translated paper",
+            "DOI": "10.1234/example",
+            "key": "OLDKEY12",
+            "version": 9,
+            "relations": {},
+            "attachments": [{"title": "remote"}],
+            "tags": [{"tag": "existing"}],
+        }
+
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
+            mock.patch.object(operations, "db_find_item_by_identifier", return_value=[]),
+            mock.patch.object(operations, "create_item", return_value="NEW12345") as create_item,
+            mock.patch.object(operations, "db_add_item_to_collection", return_value={"collectionKey": "COLL1234"}),
+            mock.patch.object(operations, "db_get_children", return_value=[]),
+            mock.patch.object(operations, "_find_pdf_source", return_value=None),
+            mock.patch.object(operations, "get_api_config") as get_api_config,
+        ):
+            result = operations.op_import_identifier(
+                "10.1234/example",
+                collection="COLL1234",
+                tags="reading, priority",
+            )
+
+        get_api_config.assert_not_called()
+        payload = create_item.call_args.args[0]
+        self.assertEqual(result["status"], "added")
+        self.assertEqual(result["item_key"], "NEW12345")
+        self.assertEqual(result["pdfStatus"], "needs_user_file")
+        self.assertEqual(payload["tags"], [{"tag": "existing"}, {"tag": "reading"}, {"tag": "priority"}])
+        for removed_field in ("key", "version", "relations", "attachments"):
+            self.assertNotIn(removed_field, payload)
+
+    def test_import_identifier_reuses_existing_and_skips_create(self):
+        translated = {"itemType": "journalArticle", "title": "Known paper", "DOI": "10.1234/example"}
+        existing = [{"key": "ABC12345", "title": "Known paper", "match": {"doi": True}}]
+
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
+            mock.patch.object(operations, "db_find_item_by_identifier", return_value=existing),
+            mock.patch.object(operations, "create_item") as create_item,
+            mock.patch.object(operations, "db_get_children", return_value=[]),
+            mock.patch.object(operations, "_find_pdf_source", return_value=None),
+        ):
+            result = operations.op_import_identifier("10.1234/example")
+
+        create_item.assert_not_called()
+        self.assertEqual(result["status"], "existing")
+        self.assertEqual(result["item_key"], "ABC12345")
+        self.assertEqual(result["pdfStatus"], "needs_user_file")
+
+    def test_import_identifier_attaches_open_pdf_locally(self):
+        translated = {"itemType": "journalArticle", "title": "OA paper", "DOI": "10.1234/oa"}
+
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
+            mock.patch.object(operations, "db_find_item_by_identifier", return_value=[]),
+            mock.patch.object(operations, "create_item", return_value="NEW12345"),
+            mock.patch.object(operations, "db_get_children", return_value=[]),
+            mock.patch.object(
+                operations,
+                "_find_pdf_source",
+                return_value=("https://example.com/paper.pdf", "https://example.com/source", "unpaywall"),
+            ),
+            mock.patch.object(operations, "_download_pdf", return_value=True) as download_pdf,
+            mock.patch.object(operations, "attach_pdf_from_file", return_value="ATT12345") as attach_pdf,
+        ):
+            result = operations.op_import_identifier("10.1234/oa")
+
+        download_pdf.assert_called_once()
+        attach_pdf.assert_called_once()
+        self.assertEqual(result["pdfStatus"], "attached")
+        self.assertEqual(result["pdfAttachmentKey"], "ATT12345")
+
+    def test_import_identifier_keeps_item_key_when_pdf_attach_fails(self):
+        translated = {"itemType": "journalArticle", "title": "OA paper", "DOI": "10.1234/oa"}
+
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
+            mock.patch.object(operations, "db_find_item_by_identifier", return_value=[]),
+            mock.patch.object(operations, "create_item", return_value="NEW12345"),
+            mock.patch.object(operations, "db_get_children", return_value=[]),
+            mock.patch.object(
+                operations,
+                "_find_pdf_source",
+                return_value=("https://example.com/paper.pdf", "https://example.com/source", "unpaywall"),
+            ),
+            mock.patch.object(operations, "_download_pdf", return_value=True),
+            mock.patch.object(operations, "attach_pdf_from_file", side_effect=RuntimeError("bridge failed")),
+        ):
+            result = operations.op_import_identifier("10.1234/oa")
+
+        self.assertEqual(result["status"], "added")
+        self.assertEqual(result["item_key"], "NEW12345")
+        self.assertEqual(result["pdfStatus"], "attach_failed")
+        self.assertIn("bridge failed", result["warnings"][0])
+
+    def test_attach_arxiv_sidecars_targets_known_item(self):
+        sidecars = {"pdfAttachmentKey": "PDF12345", "warnings": []}
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "db_get_item", return_value={"key": "ABC12345"}),
+            mock.patch.object(operations, "db_get_children", return_value=[]),
+            mock.patch.object(operations, "attach_arxiv_sidecars", return_value=sidecars) as attach_sidecars,
+        ):
+            result = operations.op_attach_arxiv_sidecars("ABC12345", "https://arxiv.org/abs/2401.01234v2")
+
+        attach_sidecars.assert_called_once_with("ABC12345", "2401.01234v2", attach_html=True, children=[])
+        self.assertEqual(result["status"], "updated")
+        self.assertEqual(result["arxivId"], "2401.01234v2")
+        self.assertEqual(result["pdfAttachmentKey"], "PDF12345")
+
+    def test_attach_arxiv_sidecars_reports_invalid_id_cleanly(self):
+        with (
+            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "db_get_item") as db_get_item,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Invalid arXiv ID"):
+                operations.op_attach_arxiv_sidecars("ABC12345", "not-an-arxiv-id")
+
+        db_get_item.assert_not_called()
 
     def test_batch_add_reports_added_duplicate_and_failed(self):
         ids_file = ROOT / "tests" / "identifiers.txt"

@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from zotero_mcp.operations import (
     op_add_identifier,
     op_arxiv,
+    op_attach_arxiv_sidecars,
     op_attachment_text,
     op_attach_pdf,
     op_attach_snapshot,
@@ -23,6 +24,7 @@ from zotero_mcp.operations import (
     op_fetch_pdfs,
     op_find_dois,
     op_get,
+    op_import_identifier,
     op_items,
     op_ping,
     op_search,
@@ -97,6 +99,43 @@ def zotero_capture_arxiv(
         attach_html=attach_html,
         force=force,
     )
+
+
+@mcp.tool()
+def zotero_import_by_identifier(
+    identifier: str,
+    id_type: str = "doi",
+    collection: str | None = None,
+    tags: str | None = None,
+    force: bool = False,
+    attach_pdf: bool = True,
+) -> dict[str, Any]:
+    """Import or reuse an item by DOI/ISBN/PMID through local Zotero Debug Bridge.
+
+    Metadata lookup may use public identifier services, but duplicate checks,
+    item creation, collection updates, and PDF attachment are local Debug Bridge
+    operations. This tool does not require ZOTERO_API_KEY.
+    """
+    if id_type not in {"doi", "isbn", "pmid"}:
+        raise ValueError("id_type must be one of: doi, isbn, pmid")
+    return op_import_identifier(
+        identifier,
+        id_type=id_type,
+        collection=collection,
+        tags=tags,
+        force=force,
+        attach_pdf=attach_pdf,
+    )
+
+
+@mcp.tool()
+def zotero_attach_arxiv_sidecars(
+    key: str,
+    arxiv: str,
+    attach_html: bool = True,
+) -> dict[str, Any]:
+    """Attach missing arXiv PDF/HTML sidecars to a known local Zotero item."""
+    return op_attach_arxiv_sidecars(key, arxiv, attach_html=attach_html)
 
 
 @mcp.tool()

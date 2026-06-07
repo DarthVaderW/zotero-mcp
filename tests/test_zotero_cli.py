@@ -76,6 +76,18 @@ class ZoteroCLITest(unittest.TestCase):
         self.assertIn("--confirmed-arxiv-id", proc.stdout)
         self.assertIn("--no-html", proc.stdout)
 
+    def test_help_import_doi(self):
+        proc = self.run_cli("import-doi", "--help")
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("--no-pdf", proc.stdout)
+        self.assertIn("--collection", proc.stdout)
+
+    def test_help_attach_arxiv_sidecars(self):
+        proc = self.run_cli("attach-arxiv-sidecars", "--help")
+        self.assertEqual(proc.returncode, 0)
+        self.assertIn("--arxiv", proc.stdout)
+        self.assertIn("--no-html", proc.stdout)
+
     def test_help_attachment_text(self):
         proc = self.run_cli("attachment-text", "--help")
         self.assertEqual(proc.returncode, 0)

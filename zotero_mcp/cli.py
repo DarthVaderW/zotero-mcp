@@ -4,7 +4,8 @@
 Local debug-bridge commands (require ZOTERO_DEBUG_BRIDGE_TOKEN):
   ping, items, search, get, collections, tags, children,
   create-item, attach-pdf, attach-snapshot, search-arxiv, capture-arxiv,
-  arxiv, attachment-text, delete, fetch-pdfs --key --file
+  arxiv, import-doi, import-isbn, import-pmid, attach-arxiv-sidecars,
+  attachment-text, delete, fetch-pdfs --key --file
 
 Web API commands (require ZOTERO_API_KEY + ZOTERO_USER_ID|ZOTERO_GROUP_ID):
   add-doi, add-isbn, add-pmid, update, export, batch-add,
@@ -23,6 +24,7 @@ from zotero_mcp.operations import (
     ensure_debug_bridge,
     op_add_identifier,
     op_arxiv,
+    op_attach_arxiv_sidecars,
     op_attach_pdf,
     op_attach_snapshot,
     op_attachment_text,
@@ -38,6 +40,7 @@ from zotero_mcp.operations import (
     op_fetch_pdfs,
     op_find_dois,
     op_get,
+    op_import_identifier,
     op_items,
     op_ping,
     op_search,
@@ -309,6 +312,46 @@ def cmd_add_identifier(args):
             print(f"Failed: {item.get('message', 'unknown error')}", file=sys.stderr)
     return result["status"]
 
+def cmd_import_identifier(args):
+    result = op_import_identifier(
+        args.identifier,
+        id_type=args.id_type,
+        collection=args.collection,
+        tags=args.tags,
+        force=getattr(args, "force", False),
+        attach_pdf=not getattr(args, "no_pdf", False),
+    )
+    if _json_mode:
+        _json_print(result)
+        return result["status"]
+    title = result.get("title") or result.get("existing", {}).get("title") or "untitled"
+    if result["status"] == "existing":
+        print(f"Already in local library: {title} [{result.get('item_key', '')}]")
+    else:
+        print(f"Imported locally: {title} [{result.get('item_key', '')}]")
+    pdf_status = result.get("pdfStatus", "unknown")
+    if pdf_status in {"attached", "existing"}:
+        print(f"PDF: {pdf_status} [{result.get('pdfAttachmentKey', '')}]")
+    elif pdf_status == "needs_user_file":
+        print("PDF: needs user-provided file")
+    elif pdf_status != "skipped":
+        print(f"PDF: {pdf_status}")
+    for warning in result.get("warnings", []):
+        print(f"Warning: {warning}", file=sys.stderr)
+    return result["status"]
+
+def cmd_attach_arxiv_sidecars(args):
+    result = op_attach_arxiv_sidecars(args.key, args.arxiv, attach_html=not args.no_html)
+    if _json_mode:
+        _json_print(result)
+        return
+    print(f"Updated arXiv sidecars for [{args.key}] ({result['arxiv_id']})")
+    sidecars = result.get("sidecars", {})
+    for name, info in sidecars.items():
+        print(f"{name}: {info.get('status', 'unknown')} {info.get('key', '')}".rstrip())
+    for warning in result.get("warnings", []):
+        print(f"Warning: {warning}", file=sys.stderr)
+
 
 def cmd_update(args):
     result = op_update_item(
@@ -533,6 +576,35 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-html", action="store_true", help="Do not try to attach arXiv HTML snapshot")
     p.add_argument("--force", action="store_true", help="Create even if a matching arXiv item exists")
 
+    p = subparsers.add_parser("import-doi", help="Import item by DOI via local debug-bridge")
+    p.add_argument("identifier", help="DOI")
+    p.add_argument("--collection", help="Collection name or key")
+    p.add_argument("--tags", help="Comma-separated tags")
+    p.add_argument("--force", action="store_true", help="Create even if duplicate detected")
+    p.add_argument("--no-pdf", action="store_true", help="Do not try to attach an OA PDF")
+    p.set_defaults(id_type="doi")
+
+    p = subparsers.add_parser("import-isbn", help="Import item by ISBN via local debug-bridge")
+    p.add_argument("identifier", help="ISBN")
+    p.add_argument("--collection", help="Collection name or key")
+    p.add_argument("--tags", help="Comma-separated tags")
+    p.add_argument("--force", action="store_true", help="Create even if duplicate detected")
+    p.add_argument("--no-pdf", action="store_true", help="Do not try to attach an OA PDF")
+    p.set_defaults(id_type="isbn")
+
+    p = subparsers.add_parser("import-pmid", help="Import item by PMID via local debug-bridge")
+    p.add_argument("identifier", help="PMID")
+    p.add_argument("--collection", help="Collection name or key")
+    p.add_argument("--tags", help="Comma-separated tags")
+    p.add_argument("--force", action="store_true", help="Create even if duplicate detected")
+    p.add_argument("--no-pdf", action="store_true", help="Do not try to attach an OA PDF")
+    p.set_defaults(id_type="pmid")
+
+    p = subparsers.add_parser("attach-arxiv-sidecars", help="Attach arXiv PDF/HTML sidecars to an existing local item")
+    p.add_argument("--key", required=True, help="Parent item key")
+    p.add_argument("--arxiv", required=True, help="arXiv ID or URL")
+    p.add_argument("--no-html", action="store_true", help="Do not try to attach arXiv HTML snapshot")
+
     p = subparsers.add_parser("delete", help="Delete local items (default: trash)")
     p.add_argument("keys", nargs="+", help="Item key(s)")
     p.add_argument("--yes", action="store_true", help="Skip confirmation")
@@ -637,6 +709,12 @@ def dispatch(args) -> None:
         cmd_search_arxiv(args)
     elif args.command == "capture-arxiv":
         cmd_capture_arxiv(args)
+    elif args.command in ("import-doi", "import-isbn", "import-pmid"):
+        result = cmd_import_identifier(args)
+        if result not in {"added", "existing"}:
+            sys.exit(1)
+    elif args.command == "attach-arxiv-sidecars":
+        cmd_attach_arxiv_sidecars(args)
     elif args.command == "delete":
         cmd_delete(args)
     elif args.command in ("add-doi", "add-isbn", "add-pmid"):

@@ -114,6 +114,39 @@ def _translate_identifier(identifier, id_type):
     except Exception as e:
         raise RuntimeError(f"Translation failed: {e}") from e
 
+def clean_translated_item_for_local(item, tags=None):
+    """Prepare translator/CrossRef metadata for local Debug Bridge creation."""
+    payload = dict(item or {})
+    for field in [
+        "key",
+        "version",
+        "dateAdded",
+        "dateModified",
+        "relations",
+        "collections",
+        "attachments",
+        "notes",
+    ]:
+        payload.pop(field, None)
+
+    tag_values = []
+    for tag in payload.pop("tags", []) or []:
+        if isinstance(tag, str):
+            tag_values.append(tag)
+        elif isinstance(tag, dict) and tag.get("tag"):
+            tag_values.append(str(tag["tag"]))
+    tag_values.extend(tag.strip() for tag in (tags or "").split(",") if tag.strip())
+    if tag_values:
+        seen = set()
+        payload["tags"] = []
+        for tag in tag_values:
+            if tag in seen:
+                continue
+            seen.add(tag)
+            payload["tags"].append({"tag": tag})
+
+    return payload
+
 
 def op_add_identifier(identifier, id_type="doi", collection=None, tags=None, force=False):
     api_key, prefix = get_api_config()

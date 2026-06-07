@@ -145,6 +145,8 @@ Useful local commands:
 python3 -m zotero_mcp.cli search-arxiv "Retargeting Matters"
 python3 -m zotero_mcp.cli capture-arxiv "Retargeting Matters" --confirmed-arxiv-id 2510.02252 --collection "Humanoid Retargeting"
 python3 -m zotero_mcp.cli arxiv 2603.11480 --collection "Humanoid Retargeting"
+python3 -m zotero_mcp.cli import-doi 10.1145/3610548.3618247 --collection "Humanoid Retargeting"
+python3 -m zotero_mcp.cli attach-arxiv-sidecars --key ABC12345 --arxiv 2310.03930
 python3 -m zotero_mcp.cli attach-snapshot --key ABC12345 --url https://arxiv.org/html/2603.11480v1 --title "arXiv HTML Snapshot"
 ```
 
@@ -155,6 +157,15 @@ items by arXiv ID/DOI/URL before creating a new item. Existing items are reused
 and missing sidecars are topped up: PDF is attached when absent, and arXiv HTML
 snapshot is attached when available unless `--no-html` is set. Use `--force`
 only when a duplicate parent item is intentional.
+
+`import-doi`, `import-isbn`, and `import-pmid` resolve identifier metadata but
+write through the local Zotero Debug Bridge, not the Zotero Web API. They reuse
+local duplicates when possible, create the parent item locally, add it to a
+collection locally, and try to attach an open-access PDF locally. If no open PDF
+is found, the created item key is still returned with `pdfStatus:
+needs_user_file`; attach a user-provided PDF later with `attach-pdf`.
+`attach-arxiv-sidecars` is for the common final-publication case: keep one
+canonical parent item and attach missing arXiv PDF/HTML sidecars to that item.
 
 For model reading workflows, use the MCP tool `zotero_get_attachment_text` with
 an attachment key. It asks local Zotero for the attachment's real file path,
