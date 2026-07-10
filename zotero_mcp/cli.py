@@ -750,7 +750,7 @@ def main():
 
     try:
         dispatch(args)
-    except RuntimeError as e:
+    except (RuntimeError, ValueError) as e:
         if _json_mode:
             _json_error(str(e), getattr(e, "code", 0))
         else:

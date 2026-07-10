@@ -7,6 +7,7 @@ Run:
 
 import contextlib
 import io
+import json
 import pathlib
 import subprocess
 import sys
@@ -75,6 +76,32 @@ class ZoteroCLITest(unittest.TestCase):
         self.assertEqual(proc.returncode, 0)
         self.assertIn("--confirmed-arxiv-id", proc.stdout)
         self.assertIn("--no-html", proc.stdout)
+
+    def test_capture_arxiv_empty_paper_exits_cleanly(self):
+        proc = self.run_cli("capture-arxiv", "")
+        self.assertEqual(proc.returncode, 1)
+        self.assertNotIn("Traceback", proc.stderr)
+        self.assertEqual(proc.stderr.strip(), "paper is required")
+
+    def test_capture_arxiv_empty_paper_exits_cleanly_json(self):
+        proc = self.run_cli("--json", "capture-arxiv", "")
+        self.assertEqual(proc.returncode, 1)
+        self.assertNotIn("Traceback", proc.stderr)
+        payload = json.loads(proc.stderr)
+        self.assertEqual(payload, {"error": "paper is required", "code": 0})
+
+    def test_search_arxiv_empty_query_exits_cleanly(self):
+        proc = self.run_cli("search-arxiv", "")
+        self.assertEqual(proc.returncode, 1)
+        self.assertNotIn("Traceback", proc.stderr)
+        self.assertEqual(proc.stderr.strip(), "query is required")
+
+    def test_search_arxiv_empty_query_exits_cleanly_json(self):
+        proc = self.run_cli("--json", "search-arxiv", "")
+        self.assertEqual(proc.returncode, 1)
+        self.assertNotIn("Traceback", proc.stderr)
+        payload = json.loads(proc.stderr)
+        self.assertEqual(payload, {"error": "query is required", "code": 0})
 
     def test_help_import_doi(self):
         proc = self.run_cli("import-doi", "--help")
