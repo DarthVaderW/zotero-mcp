@@ -1,0 +1,43 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          python-version: "3.10"
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --locked
+
+      # Same commands as the umbrella research-codex-dev runner's
+      # zotero-mcp entries (scripts/test_all.py), plus the new
+      # README drift-guard test.
+      - name: CLI tests
+        run: uv run python tests/test_zotero_cli.py
+
+      - name: Server/operations tests
+        run: uv run python tests/test_zotero_server_operations.py
+
+      - name: MCP tool-surface smoke test
+        run: >-
+          uv run python tests/smoke_test_mcp.py
+          --expect-tool zotero_ping
+          --expect-tool zotero_get_attachment_text
+          --expect-tool zotero_import_by_identifier
+          --expect-tool zotero_attach_arxiv_sidecars
+
+      - name: README tool-surface drift guard
+        run: uv run python tests/test_readme_tools.py
