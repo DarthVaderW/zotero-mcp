@@ -102,6 +102,61 @@ marketplace testing, and possible future Codex plugin improvements. They are not
 the ordinary Codex install path right now because plugin-provided MCP rows are
 read-only in Codex and do not expose an editable token/config form.
 
+## MCP Tools
+
+The MCP server registers 25 tools. They are grouped below by which backend
+each one talks to. Local tools go through the local Zotero Debug Bridge
+(`ZOTERO_DEBUG_BRIDGE_TOKEN`; Zotero must be running) and never touch the
+Zotero Web API. Remote tools go through the Zotero Web API
+(`ZOTERO_API_KEY` + `ZOTERO_USER_ID`/`ZOTERO_GROUP_ID`) and work without
+Zotero running locally. The two arXiv tools talk to arxiv.org directly and
+only write to the local library once an arXiv ID is confirmed.
+
+### Local read-only (Debug Bridge)
+
+| Tool | Description |
+| --- | --- |
+| `zotero_ping` | Check local Zotero Debug Bridge connectivity. |
+| `zotero_search_items` | Search local Zotero items through the Debug Bridge. |
+| `zotero_get_item` | Get a local Zotero item and its children by item key. |
+| `zotero_list_items` | List local Zotero items, optionally scoped to a collection key. |
+| `zotero_list_collections` | List local Zotero collections (key and name). |
+| `zotero_list_tags` | List local Zotero tags. |
+| `zotero_get_children` | List child items (attachments and notes) of a local parent item. |
+| `zotero_get_attachment_text` | Read local attachment text, preferring Zotero's full-text cache when available. |
+
+### Local write/import (Debug Bridge)
+
+| Tool | Description |
+| --- | --- |
+| `zotero_import_arxiv` | Import or reuse an arXiv item locally, attach the PDF, and try arXiv HTML. |
+| `zotero_import_by_identifier` | Import or reuse an item by DOI/ISBN/PMID through the local Debug Bridge; does not require `ZOTERO_API_KEY`. |
+| `zotero_attach_arxiv_sidecars` | Attach missing arXiv PDF/HTML sidecars to a known local item. |
+| `zotero_create_item` | Create a local Zotero item from metadata JSON. |
+| `zotero_attach_pdf` | Attach a local PDF file to a Zotero parent item. |
+| `zotero_attach_snapshot` | Attach a web page snapshot from a URL to a Zotero parent item. |
+| `zotero_delete_items` | Move local items to the trash by item key (permanent delete is CLI-only). |
+
+### Remote (Zotero Web API)
+
+| Tool | Description |
+| --- | --- |
+| `zotero_fetch_pdf` | Fetch OA PDFs remotely by DOI, or attach a local PDF when `key` and `file` are both given. |
+| `zotero_check_pdfs` | Report which library items have or are missing PDF attachments. |
+| `zotero_add_by_identifier` | Add an item to the library by DOI/ISBN/PMID via the Web API. |
+| `zotero_update_item` | Update title/date/DOI/url/tags/collection on a library item. |
+| `zotero_export` | Export library items as bibtex, ris, or csljson. |
+| `zotero_batch_add` | Batch-add identifiers (one per line in a file) via the Web API. |
+| `zotero_find_dois` | Find missing DOIs via CrossRef; read-only unless `apply=True` writes them. |
+| `zotero_crossref` | Cross-reference "Author (Year)" citations in a file against the library. |
+
+### arXiv / dual-mode
+
+| Tool | Description |
+| --- | --- |
+| `zotero_search_arxiv` | Search arXiv candidates by ID/URL or paper title. Read-only; talks to arxiv.org directly. |
+| `zotero_capture_arxiv` | Capture an arXiv paper once an ID/URL or confirmed candidate is available; title-only input stays read-only until confirmed. |
+
 ## Upgrade
 
 Codex users refresh the local `uvx @stable` cache, then fully restart Codex.
