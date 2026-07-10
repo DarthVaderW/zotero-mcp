@@ -36,6 +36,12 @@ def require_isbn(s):
         raise RuntimeError(f"Invalid ISBN: '{s}'. Must be 10 or 13 digits.")
     return s
 
+def validate_id_type(value):
+    normalized = str(value or "").strip().lower()
+    if normalized not in {"doi", "isbn", "pmid"}:
+        raise ValueError("id_type must be one of: doi, isbn, pmid")
+    return normalized
+
 def require_item_type(payload):
     item_type = str(payload.get("itemType") or "").strip()
     if not item_type:

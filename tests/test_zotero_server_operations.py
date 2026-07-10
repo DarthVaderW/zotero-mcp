@@ -15,7 +15,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zotero_mcp import arxiv, debug_bridge, doi_ops, identifiers, operations, pdf_discovery, server, web_api, web_items
+from zotero_mcp import arxiv, debug_bridge, doi_ops, identifiers, operations, pdf_discovery, server, validators, web_api, web_items
 
 
 class ZoteroServerOperationsTest(unittest.TestCase):
@@ -951,6 +951,51 @@ class ZoteroServerOperationsTest(unittest.TestCase):
                 ("/users/1/collections/COLL1234/items", "api-key", {"format": "bibtex", "limit": "100", "start": "100"}),
             ],
         )
+
+    def test_validate_id_type_normalizes_case_and_whitespace(self):
+        self.assertEqual(validators.validate_id_type("DOI"), "doi")
+        self.assertEqual(validators.validate_id_type(" isbn "), "isbn")
+        self.assertEqual(validators.validate_id_type("PmId"), "pmid")
+
+    def test_validate_id_type_rejects_unknown_value(self):
+        with self.assertRaisesRegex(ValueError, "id_type must be one of: doi, isbn, pmid"):
+            validators.validate_id_type("bogus")
+        with self.assertRaisesRegex(ValueError, "id_type must be one of: doi, isbn, pmid"):
+            validators.validate_id_type("")
+        with self.assertRaisesRegex(ValueError, "id_type must be one of: doi, isbn, pmid"):
+            validators.validate_id_type(None)
+
+    def test_server_identifier_tools_reject_bad_id_type(self):
+        with self.assertRaisesRegex(ValueError, "id_type must be one of: doi, isbn, pmid"):
+            server.zotero_import_by_identifier("10.1234/example", id_type="bogus")
+        with self.assertRaisesRegex(ValueError, "id_type must be one of: doi, isbn, pmid"):
+            server.zotero_add_by_identifier("10.1234/example", id_type="bogus")
+        with self.assertRaisesRegex(ValueError, "id_type must be one of: doi, isbn, pmid"):
+            server.zotero_batch_add("identifiers.txt", id_type="bogus")
+
+    def test_server_import_by_identifier_normalizes_id_type_case(self):
+        with mock.patch.object(server, "op_import_identifier", return_value={"status": "added"}) as op_import:
+            server.zotero_import_by_identifier("10.1234/example", id_type="DOI")
+
+        op_import.assert_called_once_with(
+            "10.1234/example",
+            id_type="doi",
+            collection=None,
+            tags=None,
+            force=False,
+            attach_pdf=True,
+        )
+
+    def test_operations_import_identifier_rejects_bad_id_type(self):
+        with self.assertRaisesRegex(ValueError, "id_type must be one of: doi, isbn, pmid"):
+            operations.op_import_identifier("10.1234/example", id_type="bogus")
+
+    def test_debug_bridge_find_item_by_identifier_rejects_bad_id_type(self):
+        with mock.patch.object(debug_bridge, "debug_bridge") as bridge:
+            with self.assertRaisesRegex(ValueError, "id_type must be one of: doi, isbn, pmid"):
+                debug_bridge.db_find_item_by_identifier("10.1234/example", id_type="bogus")
+
+        bridge.assert_not_called()
 
 
 if __name__ == "__main__":

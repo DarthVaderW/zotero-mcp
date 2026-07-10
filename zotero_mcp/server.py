@@ -32,6 +32,7 @@ from zotero_mcp.operations import (
     op_tags,
     op_update_item,
 )
+from zotero_mcp.validators import validate_id_type
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -116,8 +117,7 @@ def zotero_import_by_identifier(
     item creation, collection updates, and PDF attachment are local Debug Bridge
     operations. This tool does not require ZOTERO_API_KEY.
     """
-    if id_type not in {"doi", "isbn", "pmid"}:
-        raise ValueError("id_type must be one of: doi, isbn, pmid")
+    id_type = validate_id_type(id_type)
     return op_import_identifier(
         identifier,
         id_type=id_type,
@@ -237,8 +237,7 @@ def zotero_add_by_identifier(
     id_type is one of 'doi', 'isbn', 'pmid'. tags is a comma-separated string.
     Set force=True to add even when a duplicate is detected.
     """
-    if id_type not in {"doi", "isbn", "pmid"}:
-        raise ValueError("id_type must be one of: doi, isbn, pmid")
+    id_type = validate_id_type(id_type)
     return op_add_identifier(
         identifier,
         id_type=id_type,
@@ -306,8 +305,7 @@ def zotero_batch_add(
 
     id_type is one of 'doi', 'isbn', 'pmid'. tags is a comma-separated string.
     """
-    if id_type not in {"doi", "isbn", "pmid"}:
-        raise ValueError("id_type must be one of: doi, isbn, pmid")
+    id_type = validate_id_type(id_type)
     return op_batch_add(
         root_relative_path(file),
         id_type=id_type,

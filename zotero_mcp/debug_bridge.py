@@ -13,7 +13,7 @@ from zotero_mcp.config import (
     DEBUG_BRIDGE_TOKEN,
     DEBUG_BRIDGE_URL,
 )
-from zotero_mcp.validators import require_item_type
+from zotero_mcp.validators import require_item_type, validate_id_type
 
 def ensure_debug_bridge() -> None:
     if not DEBUG_BRIDGE_TOKEN:
@@ -108,10 +108,8 @@ return items;
 
 def db_find_item_by_identifier(identifier, id_type="doi", title=None):
     normalized_id = str(identifier or "").strip()
-    normalized_type = str(id_type or "doi").lower().strip()
+    normalized_type = validate_id_type(id_type or "doi")
     title = str(title or "").strip()
-    if normalized_type not in {"doi", "isbn", "pmid"}:
-        raise RuntimeError("id_type must be one of: doi, isbn, pmid")
 
     return debug_bridge(f"""
 await Zotero.Schema.schemaUpdatePromise;

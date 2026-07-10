@@ -73,6 +73,7 @@ from zotero_mcp.validators import (
     require_item_key,
     require_item_type as require_item_type,
     validate_doi as validate_doi,
+    validate_id_type,
     validate_isbn as validate_isbn,
     validate_item_key as validate_item_key,
 )
@@ -331,8 +332,7 @@ def op_import_identifier(
     force=False,
     attach_pdf=True,
 ):
-    if id_type not in {"doi", "isbn", "pmid"}:
-        raise RuntimeError("id_type must be one of: doi, isbn, pmid")
+    id_type = validate_id_type(id_type)
     ensure_debug_bridge()
     translated = _translate_identifier(identifier, id_type)
     if not translated:
