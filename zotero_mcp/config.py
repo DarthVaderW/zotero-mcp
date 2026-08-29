@@ -5,8 +5,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-API_BASE = "https://api.zotero.org"
-
 ROOT_DIR = Path(__file__).resolve().parents[1]
 
 
@@ -29,12 +27,15 @@ def load_dotenv(path: Path) -> None:
 
 load_dotenv(ROOT_DIR / ".env")
 
-DEBUG_BRIDGE_URL = os.environ.get(
-    "ZOTERO_DEBUG_BRIDGE_URL",
-    "http://127.0.0.1:23119/debug-bridge/execute",
-)
-DEBUG_BRIDGE_TOKEN = os.environ.get("ZOTERO_DEBUG_BRIDGE_TOKEN")
-DEBUG_BRIDGE_LIBRARY_ID = int(os.environ.get("ZOTERO_LIBRARY_ID", "1"))
+API_BASE = "https://api.zotero.org"
+LOCAL_API_BASE = os.environ.get(
+    "ZOTERO_LOCAL_API_URL",
+    "http://127.0.0.1:23119/api",
+).rstrip("/")
+LOCAL_API_APP_NAME = os.environ.get("ZOTERO_LOCAL_API_APP_NAME", "Zotero MCP").strip() or "Zotero MCP"
+LOCAL_API_KEY = os.environ.get("ZOTERO_LOCAL_API_KEY", "").strip()
+LOCAL_LIBRARY_PREFIX = os.environ.get("ZOTERO_LOCAL_LIBRARY_PREFIX", "/users/0").strip() or "/users/0"
+BACKEND = os.environ.get("ZOTERO_BACKEND", "local").strip().lower() or "local"
 
 CROSSREF_EMAIL = os.environ.get("CROSSREF_EMAIL", "").strip()
 DOI_EXCLUDED_ITEM_TYPES = {"attachment", "note"}

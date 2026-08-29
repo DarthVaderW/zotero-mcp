@@ -15,7 +15,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zotero_mcp import arxiv, debug_bridge, doi_ops, identifiers, operations, pdf_discovery, server, web_api, web_items
+from zotero_mcp import arxiv, doi_ops, identifiers, operations, pdf_discovery, server, web_api, web_items
 
 
 class ZoteroServerOperationsTest(unittest.TestCase):
@@ -23,7 +23,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         fake_items = [{"key": "ABC12345", "title": "Result"}]
 
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_search", return_value=fake_items) as db_search,
         ):
             result = server.zotero_search_items("needle", limit=3)
@@ -35,7 +35,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         item = {"key": "ABC12345", "title": "A title"}
 
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_get_item", return_value=item),
             mock.patch.object(operations, "db_delete_item", return_value={"success": True, "mode": "trash"}),
         ):
@@ -60,9 +60,14 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         op_attach.assert_called_once_with("ABC12345", str(server.ROOT / "paper.pdf"))
         self.assertEqual(result, {"attachment_key": "ATT12345"})
 
-    def test_nonzero_command_exit_raises_runtime_error(self):
-        with self.assertRaisesRegex(RuntimeError, "ZOTERO_DEBUG_BRIDGE_TOKEN"):
-            server.zotero_get_item("ABC12345")
+    def test_local_api_error_propagates_without_process_exit(self):
+        with mock.patch.object(
+            operations,
+            "ensure_local_api",
+            side_effect=RuntimeError("Cannot reach Zotero Local API"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "Cannot reach Zotero Local API"):
+                server.zotero_get_item("ABC12345")
 
     def test_api_request_raises_instead_of_exiting(self):
         error = urllib.error.HTTPError(
@@ -73,87 +78,15 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             None,
         )
 
-        with mock.patch.object(web_api.urllib.request, "urlopen", side_effect=error):
+        with (
+            mock.patch.object(web_api, "BACKEND", "web"),
+            mock.patch.object(web_api.urllib.request, "urlopen", side_effect=error),
+        ):
             with self.assertRaises(operations.CommandError) as ctx:
                 operations.api_request("/users/1/items", "api-key")
 
         self.assertEqual(ctx.exception.code, 403)
         self.assertIn("API Error 403", str(ctx.exception))
-
-    def test_debug_bridge_wrappers_execute_without_orphaned_names(self):
-        with mock.patch.object(debug_bridge, "debug_bridge", return_value={"key": "ABC12345", "success": True}) as bridge:
-            result = debug_bridge.db_create_item(
-                {"itemType": "book", "title": "Wrapper test", "tags": [{"tag": "reading"}]}
-            )
-
-        self.assertEqual(result, {"key": "ABC12345", "success": True})
-        self.assertIn('new Zotero.Item("book")', bridge.call_args.args[0])
-        self.assertIn("item.addTag(tagName)", bridge.call_args.args[0])
-        self.assertNotIn('item.setField("tags"', bridge.call_args.args[0])
-
-        with self.assertRaisesRegex(RuntimeError, "itemType is required"):
-            debug_bridge.db_create_item({"title": "Missing type"})
-
-        with mock.patch.object(debug_bridge, "debug_bridge", return_value=[]) as bridge:
-            result = debug_bridge.db_find_arxiv_item("2401.01234v2")
-
-        self.assertEqual(result, [])
-        self.assertIn("10.48550/arxiv.2401.01234", bridge.call_args.args[0])
-        self.assertIn("archiveLocation", bridge.call_args.args[0])
-        self.assertIn("Zotero.Items.getAll(lib, false)", bridge.call_args.args[0])
-        self.assertNotIn('["itemType", "title"', bridge.call_args.args[0])
-        self.assertIn("if (item.loadAllData) await item.loadAllData();", bridge.call_args.args[0])
-        self.assertIn('next === "v"', bridge.call_args.args[0])
-        self.assertIn('next === "."', bridge.call_args.args[0])
-        self.assertIn("/pdf/2401.01234", bridge.call_args.args[0])
-        self.assertIn("const extraLower = extra.toLowerCase();", bridge.call_args.args[0])
-
-        with mock.patch.object(debug_bridge, "debug_bridge", return_value=[]) as bridge:
-            result = debug_bridge.db_find_item_by_identifier(
-                "10.1234/Example/",
-                id_type="doi",
-                title="Known Paper",
-            )
-
-        self.assertEqual(result, [])
-        js = bridge.call_args.args[0]
-        self.assertIn('target.idType === "doi"', js)
-        self.assertIn('item.getField("DOI")', js)
-        self.assertIn("Zotero.Items.getAll(lib, false)", js)
-        self.assertIn("if (item.loadAllData) await item.loadAllData();", js)
-        self.assertIn("byTitle", js)
-
-    def test_debug_bridge_snapshot_wrapper_accepts_title(self):
-        with mock.patch.object(debug_bridge, "debug_bridge", return_value="SNAP1234") as bridge:
-            result = debug_bridge.db_add_snapshot(
-                "ABC12345",
-                "https://arxiv.org/html/2401.01234v1",
-                title="arXiv HTML Snapshot",
-            )
-
-        self.assertEqual(result, "SNAP1234")
-        self.assertIn("arXiv HTML Snapshot", bridge.call_args.args[0])
-
-    def test_debug_bridge_children_include_attachment_url(self):
-        with mock.patch.object(debug_bridge, "debug_bridge", return_value=[]) as bridge:
-            result = debug_bridge.db_get_children("ABC12345")
-
-        self.assertEqual(result, [])
-        self.assertIn('url: att.getField("url")', bridge.call_args.args[0])
-
-    def test_debug_bridge_attachment_file_wrapper_uses_zotero_path_api(self):
-        payload = {
-            "key": "ATT12345",
-            "filePath": "/tmp/zotero/ATT12345/paper.html",
-            "storageDirectory": "/tmp/zotero/ATT12345",
-        }
-
-        with mock.patch.object(debug_bridge, "debug_bridge", return_value=payload) as bridge:
-            result = debug_bridge.db_get_attachment_file("ATT12345")
-
-        self.assertEqual(result, payload)
-        self.assertIn("getFilePathAsync", bridge.call_args.args[0])
-        self.assertIn("Zotero.Attachments.getStorageDirectory", bridge.call_args.args[0])
 
     def test_attachment_text_prefers_zotero_full_text_cache(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -164,7 +97,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             cache.write_text("clean full text", encoding="utf-8")
 
             with (
-                mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+                mock.patch.object(operations, "ensure_local_api", return_value=None),
                 mock.patch.object(
                     operations,
                     "db_get_attachment_file",
@@ -191,7 +124,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             html.write_text("abcdef", encoding="utf-8")
 
             with (
-                mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+                mock.patch.object(operations, "ensure_local_api", return_value=None),
                 mock.patch.object(
                     operations,
                     "db_get_attachment_file",
@@ -211,14 +144,14 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertTrue(result["truncated"])
 
     def test_attachment_text_rejects_bad_max_chars_cleanly(self):
-        with mock.patch.object(operations, "ensure_debug_bridge", return_value=None) as bridge:
+        with mock.patch.object(operations, "ensure_local_api", return_value=None) as bridge:
             with self.assertRaisesRegex(RuntimeError, "max_chars"):
                 operations.op_attachment_text("ATT12345", max_chars=0)
         bridge.assert_not_called()
 
-    def test_attachment_text_rejects_unexpected_bridge_response(self):
+    def test_attachment_text_rejects_unexpected_local_api_response(self):
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_get_attachment_file", return_value="not-a-dict"),
         ):
             with self.assertRaisesRegex(RuntimeError, "unexpected attachment response"):
@@ -231,7 +164,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             pdf.write_bytes(b"%PDF-1.7")
 
             with (
-                mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+                mock.patch.object(operations, "ensure_local_api", return_value=None),
                 mock.patch.object(
                     operations,
                     "db_get_attachment_file",
@@ -259,7 +192,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             cache.write_text("indexed pdf text", encoding="utf-8")
 
             with (
-                mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+                mock.patch.object(operations, "ensure_local_api", return_value=None),
                 mock.patch.object(
                     operations,
                     "db_get_attachment_file",
@@ -303,18 +236,6 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
     def test_arxiv_title_score_uses_metadata_similarity(self):
         self.assertGreater(arxiv._title_score("Retargeting Matters", "Retargeting Matters"), 0.9)
-
-    def test_debug_bridge_attachment_wrapper_checks_local_path(self):
-        pdf = ROOT / "tests" / "fixture.pdf"
-        pdf.write_bytes(b"%PDF-1.4\n")
-        try:
-            with mock.patch.object(debug_bridge, "debug_bridge", return_value="ATT12345") as bridge:
-                result = debug_bridge.db_add_attachment("ABC12345", str(pdf), title="Full Text PDF")
-        finally:
-            pdf.unlink(missing_ok=True)
-
-        self.assertEqual(result, {"success": True, "attachment_key": "ATT12345"})
-        self.assertIn(str(pdf), bridge.call_args.args[0])
 
     def test_import_arxiv_keeps_snapshot_result(self):
         meta = {
@@ -478,7 +399,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_find_arxiv_item", return_value=existing) as find_item,
             mock.patch.object(operations, "attach_arxiv_sidecars", return_value=sidecars) as top_up,
             mock.patch.object(operations, "import_arxiv") as import_item,
@@ -498,7 +419,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         existing = [{"key": "ABC12345", "title": "Existing"}]
 
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_find_arxiv_item", return_value=existing),
             mock.patch.object(operations, "attach_arxiv_sidecars", side_effect=RuntimeError("network down")),
             mock.patch.object(operations, "import_arxiv") as import_item,
@@ -512,7 +433,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
     def test_op_arxiv_force_skips_duplicate_check(self):
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_find_arxiv_item") as find_item,
             mock.patch.object(operations, "import_arxiv", return_value={"item_key": "NEW12345"}) as import_item,
         ):
@@ -569,9 +490,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         )
         self.assertEqual(result, {"status": "added", "item_key": "ABC12345"})
 
-    def test_attach_snapshot_operation_uses_debug_bridge(self):
+    def test_attach_snapshot_operation_uses_local_api(self):
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_add_snapshot", return_value="SNAP1234") as add_snapshot,
         ):
             result = operations.op_attach_snapshot(
@@ -594,14 +515,14 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             },
         )
 
-    def test_fetch_pdfs_local_mode_preserves_debug_bridge_guard(self):
+    def test_fetch_pdfs_local_mode_preserves_local_api_guard(self):
         with (
-            mock.patch.object(pdf_discovery, "ensure_debug_bridge", return_value=None) as ensure_bridge,
+            mock.patch.object(pdf_discovery, "ensure_local_api", return_value=None) as ensure_api,
             mock.patch.object(pdf_discovery, "attach_pdf_from_file", return_value="ATT12345") as attach_pdf,
         ):
             result = pdf_discovery.op_fetch_pdfs(key="ABC12345", file="/tmp/paper.pdf")
 
-        ensure_bridge.assert_called_once_with()
+        ensure_api.assert_called_once_with()
         attach_pdf.assert_called_once_with("ABC12345", "/tmp/paper.pdf", title="Full Text PDF")
         self.assertEqual(result, {"attachment_key": "ATT12345"})
 
@@ -715,7 +636,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
             mock.patch.object(operations, "db_find_item_by_identifier", return_value=[]),
             mock.patch.object(operations, "create_item", return_value="NEW12345") as create_item,
@@ -744,7 +665,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         existing = [{"key": "ABC12345", "title": "Known paper", "match": {"doi": True}}]
 
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
             mock.patch.object(operations, "db_find_item_by_identifier", return_value=existing),
             mock.patch.object(operations, "create_item") as create_item,
@@ -762,7 +683,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         translated = {"itemType": "journalArticle", "title": "OA paper", "DOI": "10.1234/oa"}
 
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
             mock.patch.object(operations, "db_find_item_by_identifier", return_value=[]),
             mock.patch.object(operations, "create_item", return_value="NEW12345"),
@@ -786,7 +707,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         translated = {"itemType": "journalArticle", "title": "OA paper", "DOI": "10.1234/oa"}
 
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
             mock.patch.object(operations, "db_find_item_by_identifier", return_value=[]),
             mock.patch.object(operations, "create_item", return_value="NEW12345"),
@@ -809,7 +730,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
     def test_attach_arxiv_sidecars_targets_known_item(self):
         sidecars = {"pdfAttachmentKey": "PDF12345", "warnings": []}
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_get_item", return_value={"key": "ABC12345"}),
             mock.patch.object(operations, "db_get_children", return_value=[]),
             mock.patch.object(operations, "attach_arxiv_sidecars", return_value=sidecars) as attach_sidecars,
@@ -823,7 +744,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
     def test_attach_arxiv_sidecars_reports_invalid_id_cleanly(self):
         with (
-            mock.patch.object(operations, "ensure_debug_bridge", return_value=None),
+            mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_get_item") as db_get_item,
         ):
             with self.assertRaisesRegex(RuntimeError, "Invalid arXiv ID"):

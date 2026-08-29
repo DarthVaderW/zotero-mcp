@@ -1,8 +1,8 @@
-"""Local Zotero write operations built on the Debug Bridge."""
+"""Local Zotero write operations built on the official Zotero Local API."""
 
 from __future__ import annotations
 
-from zotero_mcp.debug_bridge import db_add_attachment, db_create_item
+from zotero_mcp.local_api import db_add_attachment, db_create_item
 from zotero_mcp.validators import require_item_type
 
 

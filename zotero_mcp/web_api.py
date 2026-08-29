@@ -1,4 +1,8 @@
-"""Zotero Web API helpers."""
+"""Unified Zotero API helpers.
+
+The default backend is Zotero's official Local API. Set ``ZOTERO_BACKEND=web``
+to use zotero.org with a Web API key instead.
+"""
 
 from __future__ import annotations
 
@@ -8,14 +12,22 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from uuid import uuid4
 
-from zotero_mcp.config import API_BASE
+from zotero_mcp.config import API_BASE, BACKEND
 from zotero_mcp.errors import CommandError
+from zotero_mcp.local_api import get_local_client
 
 _MAX_RETRIES = 2
 _RETRY_CODES = {429, 503}
 
 def get_api_config() -> tuple[str, str]:
+    if BACKEND == "local":
+        client = get_local_client()
+        client.probe()
+        return "", client.library_prefix
+    if BACKEND != "web":
+        raise RuntimeError("ZOTERO_BACKEND must be either 'local' or 'web'.")
     api_key = os.environ.get("ZOTERO_API_KEY")
     if not api_key:
         raise RuntimeError(
@@ -31,17 +43,34 @@ def get_api_config() -> tuple[str, str]:
     prefix = f"/users/{user_id}" if user_id else f"/groups/{group_id}"
     return api_key, prefix
 
-def api_request(path, api_key, method="GET", data=None, content_type=None, params=None):
+def api_request(path, api_key="", method="GET", data=None, content_type=None, params=None, headers=None):
+    method = method.upper()
+    if BACKEND == "local":
+        request_headers = dict(headers or {})
+        if method == "POST" and path.rstrip("/").endswith(("/items", "/collections", "/searches")):
+            if not any(name in request_headers for name in ("Zotero-Write-Token", "If-Unmodified-Since-Version")):
+                request_headers["Zotero-Write-Token"] = uuid4().hex
+        body, response_headers, _ = get_local_client().request(
+            path,
+            method=method,
+            data=data,
+            content_type=content_type,
+            params=params,
+            headers=request_headers,
+        )
+        return body.decode("utf-8", errors="replace"), response_headers
+
     url = API_BASE + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
 
-    headers = {
+    request_headers = {
         "Zotero-API-Key": api_key,
         "Zotero-API-Version": "3",
+        **(headers or {}),
     }
     if content_type:
-        headers["Content-Type"] = content_type
+        request_headers["Content-Type"] = content_type
 
     body = None
     if data is not None:
@@ -52,10 +81,10 @@ def api_request(path, api_key, method="GET", data=None, content_type=None, param
         else:
             body = json.dumps(data).encode("utf-8")
             if not content_type:
-                headers["Content-Type"] = "application/json"
+                request_headers["Content-Type"] = "application/json"
 
     for attempt in range(_MAX_RETRIES + 1):
-        req = urllib.request.Request(url, data=body, headers=headers, method=method)
+        req = urllib.request.Request(url, data=body, headers=request_headers, method=method)
         try:
             with urllib.request.urlopen(req, timeout=30) as resp:
                 return resp.read().decode("utf-8"), dict(resp.headers)

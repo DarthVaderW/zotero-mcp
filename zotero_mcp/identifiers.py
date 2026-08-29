@@ -115,7 +115,7 @@ def _translate_identifier(identifier, id_type):
         raise RuntimeError(f"Translation failed: {e}") from e
 
 def clean_translated_item_for_local(item, tags=None):
-    """Prepare translator/CrossRef metadata for local Debug Bridge creation."""
+    """Prepare translator/CrossRef metadata for official API creation."""
     payload = dict(item or {})
     for field in [
         "key",

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import os
 from pathlib import Path
+import sys
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -13,10 +14,14 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 async def run(expect_tool: list[str]) -> int:
+    env = os.environ.copy()
+    env["PYTHONPATH"] = os.pathsep.join(
+        [str(ROOT), env.get("PYTHONPATH", "")]
+    ).rstrip(os.pathsep)
     params = StdioServerParameters(
-        command="/bin/bash",
-        args=[str(ROOT / "scripts" / "run_zotero_mcp.sh")],
-        env=os.environ.copy(),
+        command=sys.executable,
+        args=["-m", "zotero_mcp.server"],
+        env=env,
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:

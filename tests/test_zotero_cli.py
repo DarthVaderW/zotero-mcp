@@ -44,7 +44,7 @@ class ZoteroCLITest(unittest.TestCase):
         proc = self.run_cli("--help")
         self.assertEqual(proc.returncode, 0)
         self.assertIn("fetch-pdfs", proc.stdout)
-        self.assertIn("debug-bridge", proc.stdout)
+        self.assertIn("official Local API", proc.stdout)
 
     def test_help_fetch_pdfs(self):
         proc = self.run_cli("fetch-pdfs", "--help")

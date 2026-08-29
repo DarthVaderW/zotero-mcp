@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Zotero CLI — local debug-bridge first, Web API for remote/lookup/export workflows.
+"""Zotero CLI — official Local API first, optional Web API backend.
 
-Local debug-bridge commands (require ZOTERO_DEBUG_BRIDGE_TOKEN):
+Local API commands (require Zotero 10+ and local communication enabled):
   ping, items, search, get, collections, tags, children,
   create-item, attach-pdf, attach-snapshot, search-arxiv, capture-arxiv,
   arxiv, import-doi, import-isbn, import-pmid, attach-arxiv-sidecars,
@@ -21,7 +21,7 @@ import sys
 from zotero_mcp.operations import (
     PDF_SOURCES,
     db_get_item,
-    ensure_debug_bridge,
+    ensure_local_api,
     op_add_identifier,
     op_arxiv,
     op_attach_arxiv_sidecars,
@@ -69,9 +69,9 @@ def _json_error(message: str, code: int = 0) -> None:
     print(json.dumps({"error": message, "code": code}), file=sys.stderr)
 
 
-def require_debug_bridge() -> None:
+def require_local_api() -> None:
     try:
-        ensure_debug_bridge()
+        ensure_local_api()
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
@@ -261,7 +261,7 @@ def cmd_delete(args):
     permanent = bool(args.permanent)
     keys = []
     if not args.yes:
-        require_debug_bridge()
+        require_local_api()
         mode = "permanently delete" if permanent else "move to trash"
         for key in args.keys:
             item = db_get_item(key)
@@ -461,7 +461,7 @@ def cmd_find_dois(args):
 
 def cmd_fetch_pdfs(args):
     """Two modes:
-    1) Local attach mode (debug bridge): --key + --file
+    1) Local attach mode (official Local API): --key + --file
     2) Remote OA fetch mode (Web API): scans items by DOI and attaches PDFs
     """
     result = op_fetch_pdfs(
@@ -517,19 +517,19 @@ def cmd_fetch_pdfs(args):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Zotero CLI — debug-bridge local workflows + Web API remote workflows",
+        description="Zotero CLI — official Local API workflows + optional Web API backend",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument("--json", action="store_true", help="Output JSON instead of human-readable text")
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    p = subparsers.add_parser("ping", help="Check local debug-bridge connection/version")
+    p = subparsers.add_parser("ping", help="Check official Zotero Local API connection/version")
 
-    p = subparsers.add_parser("items", help="List local Zotero items via debug-bridge")
+    p = subparsers.add_parser("items", help="List local Zotero items via the official Local API")
     p.add_argument("--limit", type=int, default=25, help="Max items to return")
     p.add_argument("--collection", help="Collection key")
 
-    p = subparsers.add_parser("search", help="Search local items via debug-bridge")
+    p = subparsers.add_parser("search", help="Search local items via the official Local API")
     p.add_argument("query", help="Search query")
     p.add_argument("--limit", type=int, default=25, help="Max results")
 
@@ -547,14 +547,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--max-chars", type=int, default=20000, help="Maximum characters to return")
     p.add_argument("--no-cache", action="store_true", help="Read attachment file before Zotero full-text cache")
 
-    p = subparsers.add_parser("create-item", help="Create local item via debug-bridge")
+    p = subparsers.add_parser("create-item", help="Create a local item via the official Local API")
     p.add_argument("--meta-json", default="{}", help="Item metadata JSON string")
 
-    p = subparsers.add_parser("attach-pdf", help="Attach local PDF via debug-bridge")
+    p = subparsers.add_parser("attach-pdf", help="Attach a local PDF via the official Local API")
     p.add_argument("--key", required=True, help="Parent item key")
     p.add_argument("--file", required=True, help="Local PDF path")
 
-    p = subparsers.add_parser("attach-snapshot", help="Attach web page snapshot via debug-bridge")
+    p = subparsers.add_parser("attach-snapshot", help="Attach an HTML copy via the official Local API")
     p.add_argument("--key", required=True, help="Parent item key")
     p.add_argument("--url", required=True, help="Web page URL")
     p.add_argument("--title", default="Web Page Snapshot", help="Attachment title")
@@ -576,7 +576,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-html", action="store_true", help="Do not try to attach arXiv HTML snapshot")
     p.add_argument("--force", action="store_true", help="Create even if a matching arXiv item exists")
 
-    p = subparsers.add_parser("import-doi", help="Import item by DOI via local debug-bridge")
+    p = subparsers.add_parser("import-doi", help="Import an item by DOI via the official Local API")
     p.add_argument("identifier", help="DOI")
     p.add_argument("--collection", help="Collection name or key")
     p.add_argument("--tags", help="Comma-separated tags")
@@ -584,7 +584,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-pdf", action="store_true", help="Do not try to attach an OA PDF")
     p.set_defaults(id_type="doi")
 
-    p = subparsers.add_parser("import-isbn", help="Import item by ISBN via local debug-bridge")
+    p = subparsers.add_parser("import-isbn", help="Import an item by ISBN via the official Local API")
     p.add_argument("identifier", help="ISBN")
     p.add_argument("--collection", help="Collection name or key")
     p.add_argument("--tags", help="Comma-separated tags")
@@ -592,7 +592,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-pdf", action="store_true", help="Do not try to attach an OA PDF")
     p.set_defaults(id_type="isbn")
 
-    p = subparsers.add_parser("import-pmid", help="Import item by PMID via local debug-bridge")
+    p = subparsers.add_parser("import-pmid", help="Import an item by PMID via the official Local API")
     p.add_argument("identifier", help="PMID")
     p.add_argument("--collection", help="Collection name or key")
     p.add_argument("--tags", help="Comma-separated tags")

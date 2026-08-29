@@ -735,11 +735,11 @@ wheels = [
 
 [[package]]
 name = "zotero-mcp"
-version = "0.2.6"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "mcp" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "mcp", specifier = ">=1.16.0" }]
+requires-dist = [{ name = "mcp", specifier = ">=1.16.0,<2" }]

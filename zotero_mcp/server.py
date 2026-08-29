@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
+from mcp.types import ToolAnnotations
 
 from zotero_mcp.operations import (
     op_add_identifier,
@@ -35,7 +36,20 @@ from zotero_mcp.operations import (
 
 ROOT = Path(__file__).resolve().parents[1]
 
-mcp = FastMCP("zotero-mcp")
+mcp = FastMCP(
+    "zotero-mcp",
+    instructions=(
+        "Use Zotero as the bibliographic source of truth. The default backend is Zotero 10+'s official Local API. "
+        "Read before updating; writes use Zotero object-version preconditions. Prefer import tools over raw creation "
+        "when a DOI, ISBN, PMID, or arXiv ID exists. Deletion moves items to Zotero trash; permanent deletion is not exposed."
+    ),
+)
+
+READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
+READ_NETWORK = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
+WRITE_LOCAL = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
+WRITE_NETWORK = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True)
+TRASH_ITEMS = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
 
 
 def root_relative_path(path: str) -> str:
@@ -45,25 +59,25 @@ def root_relative_path(path: str) -> str:
     return str(ROOT / local_path)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def zotero_ping() -> dict[str, Any]:
-    """Check local Zotero Debug Bridge connectivity."""
+    """Check Zotero's official Local API and report backend/version details."""
     return op_ping()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def zotero_search_items(query: str, limit: int = 25) -> dict[str, Any]:
-    """Search local Zotero items through the Debug Bridge."""
+    """Search local Zotero top-level items through the official Local API."""
     return op_search(query, limit=limit)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def zotero_get_item(key: str) -> dict[str, Any]:
     """Get a local Zotero item and its children by item key."""
     return op_get(key)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_NETWORK)
 def zotero_import_arxiv(
     arxiv: str,
     collection: str | None = None,
@@ -74,13 +88,13 @@ def zotero_import_arxiv(
     return op_arxiv(arxiv, collection_name_or_key=collection, attach_html=attach_html, force=force)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_NETWORK)
 def zotero_search_arxiv(query: str, limit: int = 5) -> dict[str, Any]:
     """Search arXiv candidates by arXiv ID/URL or paper title. This is read-only."""
     return op_search_arxiv(query, limit=limit)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_NETWORK)
 def zotero_capture_arxiv(
     paper: str,
     confirmed_arxiv_id: str | None = None,
@@ -101,7 +115,7 @@ def zotero_capture_arxiv(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_NETWORK)
 def zotero_import_by_identifier(
     identifier: str,
     id_type: str = "doi",
@@ -110,11 +124,11 @@ def zotero_import_by_identifier(
     force: bool = False,
     attach_pdf: bool = True,
 ) -> dict[str, Any]:
-    """Import or reuse an item by DOI/ISBN/PMID through local Zotero Debug Bridge.
+    """Import or reuse an item by DOI/ISBN/PMID through Zotero's official Local API.
 
     Metadata lookup may use public identifier services, but duplicate checks,
-    item creation, collection updates, and PDF attachment are local Debug Bridge
-    operations. This tool does not require ZOTERO_API_KEY.
+    item creation, collection updates, and PDF attachment are official Local API
+    operations. This tool does not require a zotero.org API key.
     """
     if id_type not in {"doi", "isbn", "pmid"}:
         raise ValueError("id_type must be one of: doi, isbn, pmid")
@@ -128,7 +142,7 @@ def zotero_import_by_identifier(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_NETWORK)
 def zotero_attach_arxiv_sidecars(
     key: str,
     arxiv: str,
@@ -138,25 +152,28 @@ def zotero_attach_arxiv_sidecars(
     return op_attach_arxiv_sidecars(key, arxiv, attach_html=attach_html)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_LOCAL)
 def zotero_create_item(meta: dict[str, Any]) -> dict[str, Any]:
     """Create a local Zotero item from metadata JSON."""
     return op_create_item(meta)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_LOCAL)
 def zotero_attach_pdf(key: str, file: str) -> dict[str, Any]:
     """Attach a local PDF file to a Zotero parent item."""
     return op_attach_pdf(key, root_relative_path(file))
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_NETWORK)
 def zotero_attach_snapshot(key: str, url: str, title: str = "Web Page Snapshot") -> dict[str, Any]:
-    """Attach a web page snapshot from a URL to a Zotero parent item."""
+    """Download one HTML document and store it as an imported_url attachment.
+
+    This is an HTML copy, not a recursive browser snapshot with all subresources.
+    """
     return op_attach_snapshot(key, url, title=title)
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_NETWORK)
 def zotero_fetch_pdf(
     key: str | None = None,
     file: str | None = None,
@@ -184,31 +201,31 @@ def zotero_fetch_pdf(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def zotero_list_items(limit: int = 25, collection: str | None = None) -> dict[str, Any]:
-    """List local Zotero items via the Debug Bridge, optionally scoped to a collection key."""
+    """List local Zotero items, optionally scoped to a collection key."""
     return op_items(limit=limit, collection_key=collection)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def zotero_list_collections() -> dict[str, Any]:
-    """List local Zotero collections (key and name) via the Debug Bridge."""
+    """List local Zotero collections (key and name)."""
     return op_collections()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def zotero_list_tags() -> dict[str, Any]:
-    """List local Zotero tags via the Debug Bridge."""
+    """List local Zotero tags."""
     return op_tags()
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def zotero_get_children(key: str) -> dict[str, Any]:
     """List child items (attachments and notes) of a local Zotero parent item."""
     return op_children(key)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def zotero_get_attachment_text(
     key: str,
     max_chars: int = 20000,
@@ -218,13 +235,13 @@ def zotero_get_attachment_text(
     return op_attachment_text(key, max_chars=max_chars, prefer_cache=prefer_cache)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_ONLY)
 def zotero_check_pdfs() -> dict[str, Any]:
     """Report which library items have or are missing PDF attachments (Web API)."""
     return op_check_pdfs()
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_NETWORK)
 def zotero_add_by_identifier(
     identifier: str,
     id_type: str = "doi",
@@ -248,7 +265,7 @@ def zotero_add_by_identifier(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_LOCAL)
 def zotero_update_item(
     key: str,
     title: str | None = None,
@@ -275,7 +292,7 @@ def zotero_update_item(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_LOCAL)
 def zotero_export(
     format: str = "bibtex",
     collection: str | None = None,
@@ -294,7 +311,7 @@ def zotero_export(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_NETWORK)
 def zotero_batch_add(
     file: str,
     id_type: str = "doi",
@@ -317,7 +334,7 @@ def zotero_batch_add(
     )
 
 
-@mcp.tool()
+@mcp.tool(annotations=WRITE_NETWORK)
 def zotero_find_dois(
     apply: bool = False,
     limit: int | None = None,
@@ -327,13 +344,13 @@ def zotero_find_dois(
     return op_find_dois(apply=apply, limit=limit, collection=collection)
 
 
-@mcp.tool()
+@mcp.tool(annotations=READ_NETWORK)
 def zotero_crossref(file: str) -> dict[str, Any]:
     """Cross-reference 'Author (Year)' citations in a text/markdown file against the library."""
     return op_crossref(root_relative_path(file))
 
 
-@mcp.tool()
+@mcp.tool(annotations=TRASH_ITEMS)
 def zotero_delete_items(keys: list[str]) -> dict[str, Any]:
     """Move local Zotero items to the trash by item key (recoverable from Zotero's trash).
 

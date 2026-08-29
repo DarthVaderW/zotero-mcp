@@ -11,8 +11,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from zotero_mcp.config import API_BASE, CROSSREF_EMAIL, PDF_SOURCES
-from zotero_mcp.debug_bridge import ensure_debug_bridge
+from zotero_mcp.config import API_BASE, BACKEND, CROSSREF_EMAIL, PDF_SOURCES
+from zotero_mcp.local_api import ensure_local_api, get_local_client
 from zotero_mcp.local_ops import attach_pdf_from_file
 from zotero_mcp.metadata import _extract_year, _first_author_last
 from zotero_mcp.pdfs import _download_pdf
@@ -98,6 +98,24 @@ def _create_linked_url_attachment(api_key, prefix, parent_key, title, url):
 
 
 def _upload_pdf_to_zotero(api_key, prefix, parent_key, filepath, filename):
+    if BACKEND == "local":
+        path = os.path.abspath(filepath)
+        try:
+            with open(path, "rb") as handle:
+                file_bytes = handle.read()
+            get_local_client().create_attachment(
+                parent_key,
+                filename=filename,
+                content_type="application/pdf",
+                title=filename,
+                data=file_bytes,
+                link_mode="imported_file",
+                mtime_ms=int(os.path.getmtime(path) * 1000),
+            )
+            return True
+        except Exception:
+            return False
+
     attachment = [{
         "itemType": "attachment",
         "parentItem": parent_key,
@@ -192,7 +210,7 @@ def _bulk_find_pdf_parents(api_key, prefix, collection_key=None):
 
 
 def _attach_local_pdf(key, file, title="Full Text PDF"):
-    ensure_debug_bridge()
+    ensure_local_api()
     require_item_key(key)
     return {"attachment_key": attach_pdf_from_file(key, file, title=title)}
 

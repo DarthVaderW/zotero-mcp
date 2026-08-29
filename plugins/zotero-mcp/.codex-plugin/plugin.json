@@ -1,7 +1,7 @@
 {
   "name": "zotero-mcp",
-  "version": "0.2.6",
-  "description": "Zotero MCP server template for Codex.",
+  "version": "0.3.0",
+  "description": "Official Local API-first Zotero MCP server for Codex.",
   "author": {
     "name": "Haotian Wang",
     "url": "https://github.com/DarthVaderW"
@@ -13,7 +13,7 @@
   "interface": {
     "displayName": "Zotero MCP",
     "shortDescription": "Connect Codex to local Zotero tools.",
-    "longDescription": "Installs the Codex MCP template for the local Zotero MCP server. Tokens stay in local Codex configuration.",
+    "longDescription": "Connects Codex to Zotero 10+ through the official Local API. Write authorization is granted inside Zotero and is not stored in Codex configuration.",
     "developerName": "Haotian Wang",
     "category": "Productivity",
     "capabilities": ["mcp"],

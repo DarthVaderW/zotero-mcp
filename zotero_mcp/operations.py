@@ -9,7 +9,7 @@ import re
 import tempfile
 
 from zotero_mcp.config import PDF_SOURCES as PDF_SOURCES
-from zotero_mcp.debug_bridge import (
+from zotero_mcp.local_api import (
     db_add_item_to_collection,
     db_add_snapshot,
     db_delete_item,
@@ -23,7 +23,7 @@ from zotero_mcp.debug_bridge import (
     db_get_tags,
     db_ping,
     db_search,
-    ensure_debug_bridge,
+    ensure_local_api,
 )
 from zotero_mcp.errors import CommandError as CommandError
 from zotero_mcp.arxiv import _extract_arxiv_id as _extract_arxiv_id
@@ -90,38 +90,38 @@ from zotero_mcp.web_api import (
 )
 
 def op_ping():
-    ensure_debug_bridge()
-    return {"zotero_version": db_ping()}
+    details = ensure_local_api()
+    return details
 
 def op_items(limit=25, collection_key=None):
-    ensure_debug_bridge()
+    ensure_local_api()
     items = db_get_items(limit=limit, collection_key=collection_key) or []
     return {"total": len(items), "items": items}
 
 def op_search(query, limit=25):
-    ensure_debug_bridge()
+    ensure_local_api()
     items = db_search(query, limit=limit) or []
     return {"total": len(items), "items": items}
 
 def op_get(key):
-    ensure_debug_bridge()
+    ensure_local_api()
     require_item_key(key)
     item = db_get_item(key)
     children = db_get_children(key)
     return {"item": item, "children": children}
 
 def op_collections():
-    ensure_debug_bridge()
+    ensure_local_api()
     cols = db_get_collections() or []
     return {"total": len(cols), "collections": cols}
 
 def op_tags():
-    ensure_debug_bridge()
+    ensure_local_api()
     tags = db_get_tags() or []
     return {"total": len(tags), "tags": tags}
 
 def op_children(key):
-    ensure_debug_bridge()
+    ensure_local_api()
     require_item_key(key)
     children = db_get_children(key) or []
     return {"total": len(children), "children": children}
@@ -168,13 +168,13 @@ def _is_text_attachment(path: Path, content_type: str) -> bool:
 def op_attachment_text(key, max_chars=20000, prefer_cache=True):
     if max_chars < 1 or max_chars > 200000:
         raise RuntimeError("max_chars must be between 1 and 200000")
-    ensure_debug_bridge()
+    ensure_local_api()
     require_item_key(key)
     info = db_get_attachment_file(key)
     if not info:
         raise RuntimeError(f"Attachment not found: {key}")
     if not isinstance(info, dict):
-        raise RuntimeError("Debug Bridge returned an unexpected attachment response.")
+        raise RuntimeError("Zotero Local API returned an unexpected attachment response.")
 
     file_path = Path(info.get("filePath") or "") if info.get("filePath") else None
     storage_dir = Path(info.get("storageDirectory") or "") if info.get("storageDirectory") else None
@@ -232,11 +232,11 @@ def op_attachment_text(key, max_chars=20000, prefer_cache=True):
     }
 
 def op_create_item(meta):
-    ensure_debug_bridge()
+    ensure_local_api()
     return {"item_key": create_item(meta)}
 
 def op_attach_pdf(key, file, title="Full Text PDF"):
-    ensure_debug_bridge()
+    ensure_local_api()
     require_item_key(key)
     return {"attachment_key": attach_pdf_from_file(key, file, title=title)}
 
@@ -333,7 +333,7 @@ def op_import_identifier(
 ):
     if id_type not in {"doi", "isbn", "pmid"}:
         raise RuntimeError("id_type must be one of: doi, isbn, pmid")
-    ensure_debug_bridge()
+    ensure_local_api()
     translated = _translate_identifier(identifier, id_type)
     if not translated:
         raise RuntimeError("No metadata found for this identifier.")
@@ -396,7 +396,7 @@ def op_import_identifier(
     }
 
 def op_attach_arxiv_sidecars(key, arxiv, attach_html=True):
-    ensure_debug_bridge()
+    ensure_local_api()
     require_item_key(key)
     try:
         arxiv_id = _extract_arxiv_id(arxiv)
@@ -464,7 +464,7 @@ def _existing_arxiv_result(arxiv_id, existing, collection=None, attach_html=True
     }
 
 def op_arxiv(arxiv, collection_name_or_key=None, attach_html=True, force=False):
-    ensure_debug_bridge()
+    ensure_local_api()
     try:
         arxiv_id = _extract_arxiv_id(arxiv)
     except ValueError as exc:
@@ -506,13 +506,13 @@ def op_capture_arxiv(paper, confirmed_arxiv_id=None, collection=None, attach_htm
     }
 
 def op_attach_snapshot(key, url, title="Web Page Snapshot"):
-    ensure_debug_bridge()
+    ensure_local_api()
     require_item_key(key)
     snapshot_key = db_add_snapshot(key, url, title=title)
     return {"snapshot_key": snapshot_key, "url": url, "title": title}
 
 def op_delete_items(keys, permanent=False):
-    ensure_debug_bridge()
+    ensure_local_api()
     result = {
         "mode": "permanent" if permanent else "trash",
         "deleted": [],

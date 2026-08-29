@@ -13,7 +13,7 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 
-from zotero_mcp.debug_bridge import db_add_item_to_collection, db_add_snapshot, db_get_children
+from zotero_mcp.local_api import db_add_item_to_collection, db_add_snapshot, db_get_children
 from zotero_mcp.local_ops import attach_pdf_from_file, create_item
 from zotero_mcp.pdfs import _download_pdf
 

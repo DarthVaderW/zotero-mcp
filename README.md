@@ -1,202 +1,155 @@
 # Zotero MCP
 
-General-purpose Zotero MCP server and helper CLI.
+Local-first Zotero MCP server and helper CLI.
 
-## Layers
+Version 0.3 uses Zotero 10+'s official Local API for local reads and writes.
+The Debug Bridge plugin and token are no longer required.
 
-- `zotero_mcp/cli.py`: CLI-only argument parsing and human/JSON presentation.
-- `zotero_mcp/server.py`: MCP tool surface that calls structured operations directly.
-- `zotero_mcp/operations.py`: structured operation entrypoints shared by the MCP server and CLI.
-- `zotero_mcp/local_ops.py`: local Debug Bridge create/attach operations.
-- `zotero_mcp/arxiv.py`: arXiv metadata import workflow, PDF attachment, and arXiv HTML snapshot discovery.
-- `zotero_mcp/pdfs.py`: shared PDF download helpers.
-- `zotero_mcp/identifiers.py`: DOI/ISBN/PMID translation and add/batch-add operations.
-- `zotero_mcp/pdf_discovery.py`: remote PDF discovery and Zotero Web API attachment upload/linking.
-- `zotero_mcp/doi_ops.py`: CrossRef citation checks and missing-DOI discovery.
-- `zotero_mcp/web_items.py`: Web API item update, export, and PDF coverage reports.
-- `zotero_mcp/metadata.py`: shared metadata formatting and matching helpers.
-- `zotero_mcp/debug_bridge.py`: local Zotero Debug Bridge transport and data helpers.
-- `zotero_mcp/web_api.py`: Zotero Web API requests, pagination, and retry handling.
-- `zotero_mcp/validators.py`: identifier and payload validation helpers.
+## What it does
 
-For MCP tools that accept file paths, absolute paths are preferred. Relative
-paths are resolved from the repository root to preserve the earlier CLI-wrapper
-behavior.
+- Search, list, and inspect local Zotero items, collections, tags, children,
+  attachments, and Zotero full-text caches.
+- Create and update items with Zotero object-version preconditions.
+- Import DOI, ISBN, PMID, and arXiv metadata with duplicate checks.
+- Upload local PDFs and other stored files through Zotero's official
+  three-phase file-upload flow.
+- Store a downloaded HTML document as an `imported_url` attachment.
+- Move items to Zotero trash. Permanent deletion is intentionally unavailable
+  through MCP.
+- Optionally use the zotero.org Web API by setting `ZOTERO_BACKEND=web`.
 
-## Install
+## Requirements
 
-This repository ships one stdio MCP server. Codex and Claude Code use the same
-server, but the ordinary client setup differs.
+1. Zotero 10 or newer.
+2. In Zotero, enable:
+   `Settings -> Advanced -> Allow other applications on this computer to communicate with Zotero`.
+3. Install [uv](https://docs.astral.sh/uv/).
 
-Prerequisite:
+The Local API is intended for programs on the same computer as Zotero. Do not
+forward or publicly expose port 23119.
 
-```bash
-uv --version
+## Install in Codex
+
+Add a local STDIO MCP server:
+
+```powershell
+codex mcp add zotero -- uvx --from git+https://github.com/DarthVaderW/zotero-mcp.git@v0.3.0 zotero-mcp
 ```
 
-If `uv` is not found, install it first. Official installer:
+No Zotero token is needed in Codex configuration. On the first write, Zotero
+opens its own authorization dialog. Choose **Always Allow** if you want future
+writes to run without another dialog.
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
+The remembered local key is stored per `Zotero-Server-ID` outside the package:
 
-Homebrew is also fine on macOS:
+- Windows: `%LOCALAPPDATA%\zotero-mcp\credentials.json`
+- macOS: `~/Library/Application Support/zotero-mcp/credentials.json`
+- Linux: `${XDG_CONFIG_HOME:-~/.config}/zotero-mcp/credentials.json`
 
-```bash
-brew install uv
-```
+The key is never printed by the CLI or MCP. Zotero can revoke remembered keys
+with **Clear Write Authorizations** in Settings -> Advanced.
 
-After installing, restart Codex or Claude Code so the app can see the updated
-PATH.
+Codex, its desktop app, and IDE extension share the same MCP configuration on a
+Codex host. Restart the MCP server after installation or upgrade.
 
-Codex recommended path: add a custom STDIO MCP server in the Codex MCP Servers
-settings.
+## Configuration
+
+The default requires no environment variables:
 
 ```text
-Name: zotero
-Command: uvx
-Args:
-  --from
-  git+https://github.com/DarthVaderW/zotero-mcp.git@stable
-  zotero-mcp
+ZOTERO_BACKEND=local
+ZOTERO_LOCAL_API_URL=http://127.0.0.1:23119/api
+ZOTERO_LOCAL_LIBRARY_PREFIX=/users/0
 ```
 
-Claude Code recommended path: use the GUI Personal plugins flow, or the
-equivalent CLI plugin commands.
+Optional values:
 
 ```text
-Customize -> Personal plugins -> Add
-DarthVaderW/zotero-mcp
+ZOTERO_LOCAL_API_APP_NAME=Zotero MCP
+ZOTERO_MCP_CREDENTIALS_FILE=<custom credential file>
+CROSSREF_EMAIL=<contact email for CrossRef and Unpaywall>
 ```
 
-## Configure
+`ZOTERO_LOCAL_API_KEY` can override automatic authorization, but ordinary
+local installs should let Zotero grant and store the key.
 
-Required local values:
+To use the zotero.org API instead:
 
 ```text
-ZOTERO_DEBUG_BRIDGE_TOKEN=<local Zotero Debug Bridge token>
-ZOTERO_DEBUG_BRIDGE_URL=http://127.0.0.1:23119/debug-bridge/execute
-ZOTERO_LIBRARY_ID=1
+ZOTERO_BACKEND=web
+ZOTERO_API_KEY=<Web API key>
+ZOTERO_USER_ID=<user id>
+# Or use ZOTERO_GROUP_ID instead of ZOTERO_USER_ID.
 ```
 
-Optional Web API values:
+## Snapshot behavior
 
-```text
-ZOTERO_API_KEY=<Zotero Web API key>
-ZOTERO_USER_ID=<Zotero user id>
-ZOTERO_GROUP_ID=<Zotero group id>
-CROSSREF_EMAIL=<real contact email for CrossRef/Unpaywall>
+`zotero_attach_snapshot` downloads one HTML response and uploads it as an
+`imported_url` attachment. It does not recursively archive images, scripts,
+stylesheets, or browser state. This deliberate limitation removes the last
+Debug Bridge dependency. Use the Zotero Connector when a browser-complete
+snapshot is required.
+
+## Main MCP workflows
+
+- `zotero_search_items`, `zotero_get_item`,
+  `zotero_get_attachment_text`
+- `zotero_import_by_identifier`
+- `zotero_search_arxiv`, `zotero_capture_arxiv`,
+  `zotero_attach_arxiv_sidecars`
+- `zotero_create_item`, `zotero_update_item`
+- `zotero_attach_pdf`, `zotero_attach_snapshot`
+- `zotero_delete_items`
+
+Existing 0.2 tool names remain available for compatibility. Codex tool
+annotations distinguish read-only, write, network, and destructive operations.
+
+## CLI examples
+
+```powershell
+uv run python -m zotero_mcp.cli ping
+uv run python -m zotero_mcp.cli search "retargeting"
+uv run python -m zotero_mcp.cli import-doi 10.1145/3610548.3618247
+uv run python -m zotero_mcp.cli capture-arxiv 2510.02252
 ```
 
-Set `CROSSREF_EMAIL` to a real contact email when using PDF discovery:
-Unpaywall requires it, and CrossRef uses it for polite requests.
+Title-only arXiv capture is read-only and returns candidates. It writes only
+after an arXiv ID/URL or `--confirmed-arxiv-id` is supplied.
 
-Codex users enter these in the custom STDIO MCP configuration. Claude Code users
-enter them through the plugin's `userConfig` prompt. For current Claude Code
-compatibility, tokens are stored with the other plugin options instead of using
-Claude's `sensitive` userConfig mode. Do not commit `.env`, PDFs, or local
-Zotero data.
+## Development and verification
 
-Codex plugin manifests are still kept in this repository for packaging,
-marketplace testing, and possible future Codex plugin improvements. They are not
-the ordinary Codex install path right now because plugin-provided MCP rows are
-read-only in Codex and do not expose an editable token/config form.
+```powershell
+uv sync
+uv run python -m unittest discover -s tests -v
+uv run python tests/smoke_test_mcp.py --expect-tool zotero_ping
+uv run python tests/live_local_api_smoke.py
+```
+
+The first two checks use no Zotero secrets. The live smoke test requires Zotero
+and performs create, note, attachment, update, readback, and trash operations.
 
 ## Upgrade
 
-Codex users refresh the local `uvx @stable` cache, then fully restart Codex.
-Existing threads can see refreshed MCP tools after restart; if they do not,
-open a new thread:
-
-```bash
-uvx --refresh --from git+https://github.com/DarthVaderW/zotero-mcp.git@stable zotero-mcp --help >/dev/null
+```powershell
+codex mcp remove zotero
+codex mcp add zotero -- uvx --from git+https://github.com/DarthVaderW/zotero-mcp.git@v0.3.0 zotero-mcp
 ```
 
-Claude Code users update the marketplace/plugin, then restart Claude Code:
+Replace `v0.3.0` with the new release tag, then restart the Zotero MCP server
+or Codex. Pinning a release tag avoids ambiguity from a cached mutable branch.
 
-```bash
-claude plugin marketplace update darthvaderw-zotero-mcp
-claude plugin update zotero-mcp@darthvaderw-zotero-mcp
-```
+## Source layout
 
-## Developer Command Mode
+- `zotero_mcp/local_api.py`: Local API authorization, credentials, reads,
+  versioned writes, file uploads, attachment paths, and trash semantics.
+- `zotero_mcp/web_api.py`: unified Local/Web API request surface.
+- `zotero_mcp/operations.py`: structured workflows shared by MCP and CLI.
+- `zotero_mcp/server.py`: MCP tools, annotations, and server instructions.
+- `zotero_mcp/arxiv.py`, `identifiers.py`, `pdf_discovery.py`: research
+  import and attachment workflows.
 
-For source development, point Codex or Claude Code at the local checkout:
+Official references:
 
-```toml
-[mcp_servers.zotero]
-command = "/bin/bash"
-args = ["/Users/<you>/projects/zotero-mcp/scripts/run_zotero_mcp.sh"]
-```
-
-## Verify
-
-```bash
-python3 tests/test_zotero_cli.py
-uv run python tests/smoke_test_mcp.py --expect-tool zotero_ping
-python3 -m zotero_mcp.cli ping
-```
-
-The final command requires Zotero running locally with Debug Bridge enabled.
-
-Useful local commands:
-
-```bash
-python3 -m zotero_mcp.cli search-arxiv "Retargeting Matters"
-python3 -m zotero_mcp.cli capture-arxiv "Retargeting Matters" --confirmed-arxiv-id 2510.02252 --collection "Humanoid Retargeting"
-python3 -m zotero_mcp.cli arxiv 2603.11480 --collection "Humanoid Retargeting"
-python3 -m zotero_mcp.cli import-doi 10.1145/3610548.3618247 --collection "Humanoid Retargeting"
-python3 -m zotero_mcp.cli attach-arxiv-sidecars --key ABC12345 --arxiv 2310.03930
-python3 -m zotero_mcp.cli attach-snapshot --key ABC12345 --url https://arxiv.org/html/2603.11480v1 --title "arXiv HTML Snapshot"
-```
-
-`search-arxiv` is read-only. `capture-arxiv` writes only when the input is an
-arXiv ID/URL or `--confirmed-arxiv-id` is supplied; title-only input returns
-candidates and does not write to Zotero. arXiv imports check for existing local
-items by arXiv ID/DOI/URL before creating a new item. Existing items are reused
-and missing sidecars are topped up: PDF is attached when absent, and arXiv HTML
-snapshot is attached when available unless `--no-html` is set. Use `--force`
-only when a duplicate parent item is intentional.
-
-`import-doi`, `import-isbn`, and `import-pmid` resolve identifier metadata but
-write through the local Zotero Debug Bridge, not the Zotero Web API. They reuse
-local duplicates when possible, create the parent item locally, add it to a
-collection locally, and try to attach an open-access PDF locally. If no open PDF
-is found, the created item key is still returned with `pdfStatus:
-needs_user_file`; attach a user-provided PDF later with `attach-pdf`.
-`attach-arxiv-sidecars` is for the common final-publication case: keep one
-canonical parent item and attach missing arXiv PDF/HTML sidecars to that item.
-
-For model reading workflows, use the MCP tool `zotero_get_attachment_text` with
-an attachment key. It asks local Zotero for the attachment's real file path,
-then prefers Zotero's `.zotero-ft-cache` when present. Store Zotero attachment
-keys in upstream notes or tables instead of hard-coding local
-`Zotero/storage/...` paths. The matching CLI command is:
-
-```bash
-python3 -m zotero_mcp.cli attachment-text <attachment-key> --max-chars 20000
-```
-
-## Troubleshooting
-
-If Claude Code reports that the MCP failed to start, check `uv` before
-re-entering tokens:
-
-```bash
-command -v uv
-uv --version
-```
-
-`uv: command not found` means the MCP process never started. Install `uv`,
-restart Claude Code, then retry the plugin. A missing `uv` can look like a
-token/config problem, but the token is not used until the MCP server actually
-starts.
-
-If `uv` works but `zotero_ping` fails, then check:
-
-```text
-Zotero is running
-Zotero Debug Bridge is enabled
-ZOTERO_DEBUG_BRIDGE_URL is http://127.0.0.1:23119/debug-bridge/execute unless changed
-ZOTERO_DEBUG_BRIDGE_TOKEN matches the local Debug Bridge token
-```
+- [Zotero Local API](https://www.zotero.org/support/dev/web_api/v3/local_api)
+- [Zotero write requests](https://www.zotero.org/support/dev/web_api/v3/write_requests)
+- [Zotero file uploads](https://www.zotero.org/support/dev/web_api/v3/file_upload)

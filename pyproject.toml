@@ -1,11 +1,11 @@
 [project]
 name = "zotero-mcp"
-version = "0.2.6"
-description = "Zotero CLI and MCP server for local and Web API operations."
+version = "0.3.0"
+description = "Local-first Zotero MCP server using the official Zotero 10+ Local API."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-  "mcp>=1.16.0"
+  "mcp>=1.16.0,<2"
 ]
 
 [project.scripts]

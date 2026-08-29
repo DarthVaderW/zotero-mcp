@@ -2,27 +2,20 @@
 
 from __future__ import annotations
 
-import json
-import urllib.error
-import urllib.request
-
-from zotero_mcp.config import API_BASE
 from zotero_mcp.validators import require_item_key
 from zotero_mcp.web_api import api_get_json, api_request, get_api_config, paginate_all
 
 
 def _patch_item_field(api_key, prefix, item_key, field, value, version):
-    url = f"{API_BASE}{prefix}/items/{item_key}"
-    headers = {
-        "Zotero-API-Key": api_key,
-        "Zotero-API-Version": "3",
-        "Content-Type": "application/json",
-        "If-Unmodified-Since-Version": str(version),
-    }
-    body = json.dumps({field: value}).encode("utf-8")
-    req = urllib.request.Request(url, data=body, headers=headers, method="PATCH")
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return resp.status
+    api_request(
+        f"{prefix}/items/{item_key}",
+        api_key,
+        method="PATCH",
+        data={field: value},
+        content_type="application/json",
+        headers={"If-Unmodified-Since-Version": str(version)},
+    )
+    return 204
 
 
 def op_update_item(
@@ -78,27 +71,14 @@ def op_update_item(
     if not changes:
         return {"status": "no_changes", "key": key, "changes": {}}
 
-    req_headers = {
-        "Zotero-API-Key": api_key,
-        "Zotero-API-Version": "3",
-        "Content-Type": "application/json",
-        "If-Unmodified-Since-Version": str(version),
-    }
-    req = urllib.request.Request(
-        f"{API_BASE}{prefix}/items/{key}",
-        data=json.dumps(changes).encode("utf-8"),
-        headers=req_headers,
+    api_request(
+        f"{prefix}/items/{key}",
+        api_key,
         method="PATCH",
+        data=changes,
+        content_type="application/json",
+        headers={"If-Unmodified-Since-Version": str(version)},
     )
-    try:
-        with urllib.request.urlopen(req, timeout=30):
-            pass
-    except urllib.error.HTTPError as e:
-        err_body = e.read().decode("utf-8") if e.fp else ""
-        detail = f"Update failed: {e.code} {e.reason}"
-        if err_body:
-            detail += f"\n{err_body[:500]}"
-        raise RuntimeError(detail) from e
 
     return {"status": "updated", "key": key, "changes": changes}
 
