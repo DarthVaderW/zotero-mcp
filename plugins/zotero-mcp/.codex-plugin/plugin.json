@@ -1,6 +1,6 @@
 {
   "name": "zotero-mcp",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Official Local API-first Zotero MCP server for Codex.",
   "author": {
     "name": "Haotian Wang",

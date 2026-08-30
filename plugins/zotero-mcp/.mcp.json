@@ -8,15 +8,11 @@
         "zotero-mcp"
       ],
       "env_vars": [
-        "ZOTERO_BACKEND",
         "ZOTERO_LOCAL_API_URL",
         "ZOTERO_LOCAL_LIBRARY_PREFIX",
         "ZOTERO_LOCAL_API_APP_NAME",
         "ZOTERO_MCP_CREDENTIALS_FILE",
         "ZOTERO_LOCAL_API_KEY",
-        "ZOTERO_API_KEY",
-        "ZOTERO_USER_ID",
-        "ZOTERO_GROUP_ID",
         "CROSSREF_EMAIL"
       ]
     }

@@ -1,7 +1,7 @@
 """Official Zotero Local API transport and local-library helpers.
 
-Zotero 10+ exposes the Web API under ``localhost:23119/api``. Reads are
-unauthenticated. Writes use a user-approved local API key and must include the
+Zotero 10+ exposes its Local API under ``localhost:23119/api``. Reads are
+unauthenticated. Writes use a user-approved local key and must include the
 instance-specific ``Zotero-Server-ID`` header. Remembered keys are stored per
 server ID outside the package directory so ``uvx`` upgrades do not lose them.
 """

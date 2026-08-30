@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
-"""Zotero CLI — official Local API first, optional Web API backend.
+"""Zotero CLI for the official Zotero 10+ Local API.
 
-Local API commands (require Zotero 10+ and local communication enabled):
+Commands require Zotero 10+ with local communication enabled:
   ping, items, search, get, collections, tags, children,
   create-item, attach-pdf, attach-snapshot, search-arxiv, capture-arxiv,
-  arxiv, import-doi, import-isbn, import-pmid, attach-arxiv-sidecars,
-  attachment-text, delete, fetch-pdfs --key --file
-
-Web API commands (require ZOTERO_API_KEY + ZOTERO_USER_ID|ZOTERO_GROUP_ID):
-  add-doi, add-isbn, add-pmid, update, export, batch-add,
-  check-pdfs, crossref, find-dois, fetch-pdfs (remote mode)
+  import-doi, import-isbn, import-pmid, attach-arxiv-sidecars,
+  attachment-text, update, export, check-pdfs, crossref, find-dois, delete
 """
 
 from __future__ import annotations
@@ -18,27 +14,19 @@ import argparse
 import json
 import sys
 
+from zotero_mcp.doi_ops import op_crossref, op_find_dois
+from zotero_mcp.library_ops import op_check_pdfs, op_export, op_update_item
+from zotero_mcp.local_api import db_get_item, ensure_local_api
 from zotero_mcp.operations import (
-    PDF_SOURCES,
-    db_get_item,
-    ensure_local_api,
-    op_add_identifier,
-    op_arxiv,
     op_attach_arxiv_sidecars,
     op_attach_pdf,
     op_attach_snapshot,
     op_attachment_text,
-    op_batch_add,
     op_capture_arxiv,
-    op_check_pdfs,
     op_children,
     op_collections,
     op_create_item,
-    op_crossref,
     op_delete_items,
-    op_export,
-    op_fetch_pdfs,
-    op_find_dois,
     op_get,
     op_import_identifier,
     op_items,
@@ -46,7 +34,6 @@ from zotero_mcp.operations import (
     op_search,
     op_search_arxiv,
     op_tags,
-    op_update_item,
 )
 
 _json_mode = False
@@ -76,6 +63,7 @@ def require_local_api() -> None:
         print(str(exc), file=sys.stderr)
         sys.exit(1)
 
+
 def cmd_ping(_args):
     result = op_ping()
     if _json_mode:
@@ -92,7 +80,9 @@ def cmd_items(args):
         return
     print(f"Showing {len(items)} item(s)\n")
     for item in items:
-        print(f"[{item.get('key','')}] {item.get('creators','')} ({item.get('dateAdded','')[:4]}) {item.get('title','Untitled')[:80]}")
+        print(
+            f"[{item.get('key', '')}] {item.get('creators', '')} ({item.get('dateAdded', '')[:4]}) {item.get('title', 'Untitled')[:80]}"
+        )
 
 
 def cmd_search(args):
@@ -103,7 +93,9 @@ def cmd_search(args):
         return
     print(f"Found {len(items)} result(s)\n")
     for item in items:
-        print(f"[{item.get('key','')}] {item.get('creators','')} {item.get('title','Untitled')[:80]}")
+        print(
+            f"[{item.get('key', '')}] {item.get('creators', '')} {item.get('title', 'Untitled')[:80]}"
+        )
 
 
 def cmd_get(args):
@@ -129,7 +121,9 @@ def cmd_get(args):
         print(f"\nChildren ({len(children)}):")
         for c in children:
             if c.get("itemType") == "attachment":
-                print(f"  [ATT] [{c['key']}] {c.get('title', 'Attachment')} [{c.get('contentType', '?')}]")
+                print(
+                    f"  [ATT] [{c['key']}] {c.get('title', 'Attachment')} [{c.get('contentType', '?')}]"
+                )
             else:
                 print(f"  [NOTE] [{c['key']}] {c.get('title', 'Note')}")
 
@@ -167,13 +161,17 @@ def cmd_children(args):
         return
     for c in children:
         if c.get("itemType") == "attachment":
-            print(f"[ATT] [{c['key']}] {c.get('title', 'Attachment')} [{c.get('contentType', '?')}]")
+            print(
+                f"[ATT] [{c['key']}] {c.get('title', 'Attachment')} [{c.get('contentType', '?')}]"
+            )
         else:
             print(f"[NOTE] [{c['key']}] {c.get('title', 'Note')}")
 
 
 def cmd_attachment_text(args):
-    result = op_attachment_text(args.key, max_chars=args.max_chars, prefer_cache=not args.no_cache)
+    result = op_attachment_text(
+        args.key, max_chars=args.max_chars, prefer_cache=not args.no_cache
+    )
     if _json_mode:
         _json_print(result)
         return
@@ -209,19 +207,6 @@ def cmd_attach_snapshot(args):
         _json_print(result)
     else:
         print(result["snapshot_key"])
-
-
-def cmd_arxiv(args):
-    result = op_arxiv(
-        args.arxiv,
-        collection_name_or_key=args.collection,
-        attach_html=not args.no_html,
-        force=args.force,
-    )
-    if _json_mode:
-        _json_print(result)
-    else:
-        print(json.dumps(result, ensure_ascii=False))
 
 
 def cmd_search_arxiv(args):
@@ -281,7 +266,10 @@ def cmd_delete(args):
         _json_print(result)
         return
     for item in result["invalid"]:
-        print(f"Invalid item key: '{item['key']}'. Must be 8 alphanumeric characters.", file=sys.stderr)
+        print(
+            f"Invalid item key: '{item['key']}'. Must be 8 alphanumeric characters.",
+            file=sys.stderr,
+        )
     for item in result["missing"]:
         print(f"Item {item['key']} not found", file=sys.stderr)
     for item in result["deleted"]:
@@ -289,28 +277,6 @@ def cmd_delete(args):
     for item in result["failed"]:
         print(f"Failed: {item.get('error', 'Unknown error')}", file=sys.stderr)
 
-
-def cmd_add_identifier(args):
-    result = op_add_identifier(
-        args.identifier,
-        id_type=args.id_type,
-        collection=args.collection,
-        tags=args.tags,
-        force=getattr(args, "force", False),
-    )
-    if _json_mode:
-        _json_print(result)
-        return result["status"]
-    if result["status"] == "duplicate":
-        print(f"Already in library: {result['existing']['summary']}")
-        print("Use --force to add anyway.")
-    elif result["status"] == "added":
-        for item in result["successful"]:
-            print(f"Added: {item.get('title', 'untitled')} [{item.get('key', '')}]")
-    elif result["status"] == "failed":
-        for item in result.get("failed", []):
-            print(f"Failed: {item.get('message', 'unknown error')}", file=sys.stderr)
-    return result["status"]
 
 def cmd_import_identifier(args):
     result = op_import_identifier(
@@ -340,8 +306,11 @@ def cmd_import_identifier(args):
         print(f"Warning: {warning}", file=sys.stderr)
     return result["status"]
 
+
 def cmd_attach_arxiv_sidecars(args):
-    result = op_attach_arxiv_sidecars(args.key, args.arxiv, attach_html=not args.no_html)
+    result = op_attach_arxiv_sidecars(
+        args.key, args.arxiv, attach_html=not args.no_html
+    )
     if _json_mode:
         _json_print(result)
         return
@@ -374,7 +343,9 @@ def cmd_update(args):
 
 
 def cmd_export(args):
-    result = op_export(format=args.format, collection=args.collection, output=args.output)
+    result = op_export(
+        format=args.format, collection=args.collection, output=args.output
+    )
     if _json_mode:
         output = dict(result)
         if "text" in output:
@@ -385,27 +356,6 @@ def cmd_export(args):
         print(f"Exported to {args.output} ({result['bytes']} bytes)")
     else:
         print(result["text"])
-
-
-def cmd_batch_add(args):
-    result = op_batch_add(
-        args.file,
-        id_type=args.type,
-        collection=args.collection,
-        tags=args.tags,
-        force=args.force,
-    )
-    if _json_mode:
-        _json_print(result)
-        return
-    if not result["total"]:
-        print("No identifiers found in file.")
-        return
-    for index, item in enumerate(result["results"], 1):
-        print(f"[{index}/{result['total']}] {item.get('identifier', '')}")
-    print(f"Added: {result['added']}")
-    print(f"Skipped: {result['skipped']}")
-    print(f"Failed: {result['failed']}")
 
 
 def cmd_check_pdfs(_args):
@@ -437,15 +387,21 @@ def cmd_crossref(args):
 
 
 def cmd_find_dois(args):
-    result = op_find_dois(apply=args.apply, limit=args.limit, collection=args.collection)
+    result = op_find_dois(
+        apply=args.apply, limit=args.limit, collection=args.collection
+    )
     if _json_mode:
         _json_print(result)
         return
     print(f"Found {result['processed']} items missing DOIs")
     for index, item in enumerate(result["results"], 1):
-        print(f"[{index}/{result['processed']}] [{item['key']}] {item.get('title', '')[:80]}")
+        print(
+            f"[{index}/{result['processed']}] [{item['key']}] {item.get('title', '')[:80]}"
+        )
         if item["status"] == "matched":
-            print(f"  Match: {item['doi']} (title similarity: {item['match']['similarity']}%)")
+            print(
+                f"  Match: {item['doi']} (title similarity: {item['match']['similarity']}%)"
+            )
             if item.get("written"):
                 print("  DOI written")
             elif item.get("writeError"):
@@ -459,77 +415,29 @@ def cmd_find_dois(args):
         print("Dry run mode. Use --apply to write DOIs.")
 
 
-def cmd_fetch_pdfs(args):
-    """Two modes:
-    1) Local attach mode (official Local API): --key + --file
-    2) Remote OA fetch mode (Web API): scans items by DOI and attaches PDFs
-    """
-    result = op_fetch_pdfs(
-        key=args.key,
-        file=args.file,
-        title=args.title,
-        collection=args.collection,
-        limit=args.limit,
-        force=args.force,
-        sources=args.sources,
-        download_dir=args.download_dir,
-        dry_run=args.dry_run,
-        download_only=args.download_only,
-        link_only=args.link_only,
-    )
-    if _json_mode:
-        _json_print(result)
-        return
-    if args.key or args.file:
-        if result.get("attachment_key"):
-            print(f"Attached: {args.file} -> [{args.key}]")
-        else:
-            print("Attach failed", file=sys.stderr)
-        return
-    if not result["processed"]:
-        print("No candidate items to fetch PDFs for.")
-        return
-    for index, item in enumerate(result["results"], 1):
-        print(f"[{index}/{result['processed']}] [{item['key']}] {item.get('title', 'untitled')[:70]}")
-        if item["status"] == "no_source":
-            print("  No OA PDF source found")
-        elif item["status"] == "dry_run":
-            print(f"  DRY-RUN {item['source']}: {item['pdfUrl']}")
-        elif item["status"] == "download_failed":
-            print(f"  Download failed: {item['pdfUrl']}")
-        elif item["status"] == "downloaded":
-            print(f"  Saved: {item['localPath']}")
-        elif item["status"] == "linked":
-            print(f"  Linked URL attachment ({item['source']})")
-        elif item["status"] == "link_failed":
-            print("  Failed to create linked URL attachment")
-        elif item["status"] == "attached":
-            print(f"  Uploaded PDF ({item['source']})")
-        elif item["status"] == "upload_failed":
-            print("  Upload failed")
-    print("\nfetch-pdfs summary")
-    print(f"Processed: {result['processed']}")
-    print(f"Downloaded: {result['downloaded']}")
-    print(f"Attached(uploaded): {result['attached']}")
-    print(f"Linked URL: {result['linked']}")
-    print(f"Failed: {result['failed']}")
-
-
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Zotero CLI — official Local API workflows + optional Web API backend",
+        description="Zotero CLI — official Zotero 10+ Local API workflows",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--json", action="store_true", help="Output JSON instead of human-readable text")
+    parser.add_argument(
+        "--json", action="store_true", help="Output JSON instead of human-readable text"
+    )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
-    p = subparsers.add_parser("ping", help="Check official Zotero Local API connection/version")
+    p = subparsers.add_parser(
+        "ping", help="Check official Zotero Local API connection/version"
+    )
 
-    p = subparsers.add_parser("items", help="List local Zotero items via the official Local API")
+    p = subparsers.add_parser(
+        "items", help="List local Zotero items via the official Local API"
+    )
     p.add_argument("--limit", type=int, default=25, help="Max items to return")
     p.add_argument("--collection", help="Collection key")
 
-    p = subparsers.add_parser("search", help="Search local items via the official Local API")
+    p = subparsers.add_parser(
+        "search", help="Search local items via the official Local API"
+    )
     p.add_argument("query", help="Search query")
     p.add_argument("--limit", type=int, default=25, help="Max results")
 
@@ -542,97 +450,125 @@ def build_parser() -> argparse.ArgumentParser:
     p = subparsers.add_parser("children", help="List local child items")
     p.add_argument("key", help="Parent item key")
 
-    p = subparsers.add_parser("attachment-text", help="Read local attachment text/cache by attachment key")
+    p = subparsers.add_parser(
+        "attachment-text", help="Read local attachment text/cache by attachment key"
+    )
     p.add_argument("key", help="Attachment item key")
-    p.add_argument("--max-chars", type=int, default=20000, help="Maximum characters to return")
-    p.add_argument("--no-cache", action="store_true", help="Read attachment file before Zotero full-text cache")
+    p.add_argument(
+        "--max-chars", type=int, default=20000, help="Maximum characters to return"
+    )
+    p.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Read attachment file before Zotero full-text cache",
+    )
 
-    p = subparsers.add_parser("create-item", help="Create a local item via the official Local API")
+    p = subparsers.add_parser(
+        "create-item", help="Create a local item via the official Local API"
+    )
     p.add_argument("--meta-json", default="{}", help="Item metadata JSON string")
 
-    p = subparsers.add_parser("attach-pdf", help="Attach a local PDF via the official Local API")
+    p = subparsers.add_parser(
+        "attach-pdf", help="Attach a local PDF via the official Local API"
+    )
     p.add_argument("--key", required=True, help="Parent item key")
     p.add_argument("--file", required=True, help="Local PDF path")
 
-    p = subparsers.add_parser("attach-snapshot", help="Attach an HTML copy via the official Local API")
+    p = subparsers.add_parser(
+        "attach-snapshot", help="Attach an HTML copy via the official Local API"
+    )
     p.add_argument("--key", required=True, help="Parent item key")
     p.add_argument("--url", required=True, help="Web page URL")
     p.add_argument("--title", default="Web Page Snapshot", help="Attachment title")
-
-    p = subparsers.add_parser("arxiv", help="Import arXiv item + local PDF + HTML snapshot")
-    p.add_argument("arxiv", help="arXiv ID or URL")
-    p.add_argument("--collection", help="Collection name or key")
-    p.add_argument("--no-html", action="store_true", help="Do not try to attach arXiv HTML snapshot")
-    p.add_argument("--force", action="store_true", help="Create even if a matching arXiv item exists")
 
     p = subparsers.add_parser("search-arxiv", help="Search arXiv by ID, URL, or title")
     p.add_argument("query", help="arXiv ID/URL or paper title")
     p.add_argument("--limit", type=int, default=5, help="Max candidates")
 
-    p = subparsers.add_parser("capture-arxiv", help="Capture arXiv by ID/URL or confirmed candidate")
+    p = subparsers.add_parser(
+        "capture-arxiv", help="Capture arXiv by ID/URL or confirmed candidate"
+    )
     p.add_argument("paper", help="arXiv ID/URL or title")
-    p.add_argument("--confirmed-arxiv-id", help="Candidate arXiv ID selected from search-arxiv")
+    p.add_argument(
+        "--confirmed-arxiv-id", help="Candidate arXiv ID selected from search-arxiv"
+    )
     p.add_argument("--collection", help="Collection name or key")
-    p.add_argument("--no-html", action="store_true", help="Do not try to attach arXiv HTML snapshot")
-    p.add_argument("--force", action="store_true", help="Create even if a matching arXiv item exists")
+    p.add_argument(
+        "--no-html",
+        action="store_true",
+        help="Do not try to attach arXiv HTML snapshot",
+    )
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="Create even if a matching arXiv item exists",
+    )
 
-    p = subparsers.add_parser("import-doi", help="Import an item by DOI via the official Local API")
+    p = subparsers.add_parser(
+        "import-doi", help="Import an item by DOI via the official Local API"
+    )
     p.add_argument("identifier", help="DOI")
     p.add_argument("--collection", help="Collection name or key")
     p.add_argument("--tags", help="Comma-separated tags")
-    p.add_argument("--force", action="store_true", help="Create even if duplicate detected")
-    p.add_argument("--no-pdf", action="store_true", help="Do not try to attach an OA PDF")
+    p.add_argument(
+        "--force", action="store_true", help="Create even if duplicate detected"
+    )
+    p.add_argument(
+        "--no-pdf", action="store_true", help="Do not try to attach an OA PDF"
+    )
     p.set_defaults(id_type="doi")
 
-    p = subparsers.add_parser("import-isbn", help="Import an item by ISBN via the official Local API")
+    p = subparsers.add_parser(
+        "import-isbn", help="Import an item by ISBN via the official Local API"
+    )
     p.add_argument("identifier", help="ISBN")
     p.add_argument("--collection", help="Collection name or key")
     p.add_argument("--tags", help="Comma-separated tags")
-    p.add_argument("--force", action="store_true", help="Create even if duplicate detected")
-    p.add_argument("--no-pdf", action="store_true", help="Do not try to attach an OA PDF")
+    p.add_argument(
+        "--force", action="store_true", help="Create even if duplicate detected"
+    )
+    p.add_argument(
+        "--no-pdf", action="store_true", help="Do not try to attach an OA PDF"
+    )
     p.set_defaults(id_type="isbn")
 
-    p = subparsers.add_parser("import-pmid", help="Import an item by PMID via the official Local API")
+    p = subparsers.add_parser(
+        "import-pmid", help="Import an item by PMID via the official Local API"
+    )
     p.add_argument("identifier", help="PMID")
     p.add_argument("--collection", help="Collection name or key")
     p.add_argument("--tags", help="Comma-separated tags")
-    p.add_argument("--force", action="store_true", help="Create even if duplicate detected")
-    p.add_argument("--no-pdf", action="store_true", help="Do not try to attach an OA PDF")
+    p.add_argument(
+        "--force", action="store_true", help="Create even if duplicate detected"
+    )
+    p.add_argument(
+        "--no-pdf", action="store_true", help="Do not try to attach an OA PDF"
+    )
     p.set_defaults(id_type="pmid")
 
-    p = subparsers.add_parser("attach-arxiv-sidecars", help="Attach arXiv PDF/HTML sidecars to an existing local item")
+    p = subparsers.add_parser(
+        "attach-arxiv-sidecars",
+        help="Attach arXiv PDF/HTML sidecars to an existing local item",
+    )
     p.add_argument("--key", required=True, help="Parent item key")
     p.add_argument("--arxiv", required=True, help="arXiv ID or URL")
-    p.add_argument("--no-html", action="store_true", help="Do not try to attach arXiv HTML snapshot")
+    p.add_argument(
+        "--no-html",
+        action="store_true",
+        help="Do not try to attach arXiv HTML snapshot",
+    )
 
     p = subparsers.add_parser("delete", help="Delete local items (default: trash)")
     p.add_argument("keys", nargs="+", help="Item key(s)")
     p.add_argument("--yes", action="store_true", help="Skip confirmation")
     p.add_argument("--permanent", action="store_true", help="Permanently delete")
-    p.add_argument("--trash", action="store_true", help="Explicitly move to trash (default)")
+    p.add_argument(
+        "--trash", action="store_true", help="Explicitly move to trash (default)"
+    )
 
-    p = subparsers.add_parser("add-doi", help="Add item by DOI (Web API)")
-    p.add_argument("identifier", help="DOI")
-    p.add_argument("--collection", help="Add to collection key")
-    p.add_argument("--tags", help="Comma-separated tags")
-    p.add_argument("--force", action="store_true", help="Add even if duplicate detected")
-    p.set_defaults(id_type="doi")
-
-    p = subparsers.add_parser("add-isbn", help="Add item by ISBN (Web API)")
-    p.add_argument("identifier", help="ISBN")
-    p.add_argument("--collection", help="Add to collection key")
-    p.add_argument("--tags", help="Comma-separated tags")
-    p.add_argument("--force", action="store_true", help="Add even if duplicate detected")
-    p.set_defaults(id_type="isbn")
-
-    p = subparsers.add_parser("add-pmid", help="Add item by PMID (Web API)")
-    p.add_argument("identifier", help="PMID")
-    p.add_argument("--collection", help="Add to collection key")
-    p.add_argument("--tags", help="Comma-separated tags")
-    p.add_argument("--force", action="store_true", help="Add even if duplicate detected")
-    p.set_defaults(id_type="pmid")
-
-    p = subparsers.add_parser("update", help="Update metadata via Web API")
+    p = subparsers.add_parser(
+        "update", help="Update local metadata with version checks"
+    )
     p.add_argument("key", help="Item key")
     p.add_argument("--title", help="New title")
     p.add_argument("--date", help="New date")
@@ -642,40 +578,29 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--remove-tags", help="Comma-separated tags to remove")
     p.add_argument("--add-collection", help="Add to collection key")
 
-    p = subparsers.add_parser("export", help="Export via Web API")
-    p.add_argument("--format", default="bibtex", choices=["bibtex", "ris", "csljson"], help="Export format")
+    p = subparsers.add_parser("export", help="Export items from the local library")
+    p.add_argument(
+        "--format",
+        default="bibtex",
+        choices=["bibtex", "ris", "csljson"],
+        help="Export format",
+    )
     p.add_argument("--collection", help="Collection key")
     p.add_argument("--output", help="Output file path")
 
-    p = subparsers.add_parser("batch-add", help="Batch add identifiers via Web API")
-    p.add_argument("file", help="File with one identifier per line")
-    p.add_argument("--type", default="doi", choices=["doi", "isbn", "pmid"], help="Identifier type")
-    p.add_argument("--collection", help="Collection key")
-    p.add_argument("--tags", help="Comma-separated tags")
-    p.add_argument("--force", action="store_true", help="Skip duplicate detection")
+    subparsers.add_parser("check-pdfs", help="Report local PDF attachment status")
 
-    subparsers.add_parser("check-pdfs", help="Report PDF attachment status via Web API")
-
-    p = subparsers.add_parser("crossref", help="Cross-reference citations via Web API")
+    p = subparsers.add_parser(
+        "crossref", help="Cross-reference citations against the local library"
+    )
     p.add_argument("file", help="Citation text/markdown file")
 
-    p = subparsers.add_parser("find-dois", help="Find missing DOIs via CrossRef and Web API")
+    p = subparsers.add_parser(
+        "find-dois", help="Find missing DOIs via Crossref and update locally"
+    )
     p.add_argument("--apply", action="store_true", help="Write matched DOIs")
     p.add_argument("--limit", type=int, default=None, help="Max items to process")
     p.add_argument("--collection", help="Collection key")
-
-    p = subparsers.add_parser("fetch-pdfs", help="Fetch OA PDFs (Web API) or attach local file (--key --file)")
-    p.add_argument("--key", help="Local attach mode: parent item key")
-    p.add_argument("--file", help="Local attach mode: local PDF file path")
-    p.add_argument("--title", default="Full Text PDF", help="Attachment title")
-    p.add_argument("--collection", help="Remote mode: collection key scope")
-    p.add_argument("--limit", type=int, default=None, help="Remote mode: max items")
-    p.add_argument("--force", action="store_true", help="Remote mode: include items that already have PDFs")
-    p.add_argument("--sources", default=",".join(PDF_SOURCES), help="Remote mode: comma-separated PDF sources")
-    p.add_argument("--download-dir", default="pdfs", help="Remote mode: local download directory")
-    p.add_argument("--dry-run", action="store_true", help="Remote mode: do not download/write")
-    p.add_argument("--download-only", action="store_true", help="Remote mode: download locally, do not attach")
-    p.add_argument("--link-only", action="store_true", help="Remote mode: create linked_url attachment instead of upload")
 
     return parser
 
@@ -703,8 +628,6 @@ def dispatch(args) -> None:
         cmd_attach_pdf(args)
     elif args.command == "attach-snapshot":
         cmd_attach_snapshot(args)
-    elif args.command == "arxiv":
-        cmd_arxiv(args)
     elif args.command == "search-arxiv":
         cmd_search_arxiv(args)
     elif args.command == "capture-arxiv":
@@ -717,24 +640,16 @@ def dispatch(args) -> None:
         cmd_attach_arxiv_sidecars(args)
     elif args.command == "delete":
         cmd_delete(args)
-    elif args.command in ("add-doi", "add-isbn", "add-pmid"):
-        result = cmd_add_identifier(args)
-        if result == "failed":
-            sys.exit(1)
     elif args.command == "update":
         cmd_update(args)
     elif args.command == "export":
         cmd_export(args)
-    elif args.command == "batch-add":
-        cmd_batch_add(args)
     elif args.command == "check-pdfs":
         cmd_check_pdfs(args)
     elif args.command == "crossref":
         cmd_crossref(args)
     elif args.command == "find-dois":
         cmd_find_dois(args)
-    elif args.command == "fetch-pdfs":
-        cmd_fetch_pdfs(args)
 
 
 def main():

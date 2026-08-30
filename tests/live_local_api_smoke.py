@@ -25,7 +25,7 @@ def main() -> int:
     try:
         parent = {
             "itemType": "journalArticle",
-            "title": "Codex Zotero MCP v0.3 Local API smoke test",
+            "title": "Codex Zotero MCP v0.4 Local API smoke test",
             "date": "2026-08-29",
             "creators": [{"creatorType": "author", "name": "Zotero MCP live test"}],
             "tags": [{"tag": "zotero-mcp-live-test"}],
@@ -60,7 +60,7 @@ def main() -> int:
         client.patch_item(
             parent_key,
             {
-                "title": "Codex Zotero MCP v0.3 Local API smoke test (verified)",
+                "title": "Codex Zotero MCP v0.4 Local API smoke test (verified)",
                 "tags": [
                     {"tag": "zotero-mcp-live-test"},
                     {"tag": "local-api-verified"},
@@ -68,9 +68,16 @@ def main() -> int:
             },
         )
         parent_after, _ = client.get_json(f"{client.library_prefix}/items/{parent_key}")
-        children, _ = client.get_json(f"{client.library_prefix}/items/{parent_key}/children")
-        child_keys = {item.get("key") or item.get("data", {}).get("key") for item in children}
-        if parent_after.get("data", {}).get("title", "").endswith("(verified)") is False:
+        children, _ = client.get_json(
+            f"{client.library_prefix}/items/{parent_key}/children"
+        )
+        child_keys = {
+            item.get("key") or item.get("data", {}).get("key") for item in children
+        }
+        if (
+            parent_after.get("data", {}).get("title", "").endswith("(verified)")
+            is False
+        ):
             raise RuntimeError("Updated title was not visible on readback")
         if {note_key, attachment_key} - child_keys:
             raise RuntimeError("Created child objects were not visible on readback")
@@ -101,7 +108,9 @@ def main() -> int:
             try:
                 client.delete_item(parent_key)
             except Exception:
-                result["cleanup_warning"] = "Could not move failed smoke-test item to trash"
+                result["cleanup_warning"] = (
+                    "Could not move failed smoke-test item to trash"
+                )
 
     sys.stdout.reconfigure(encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False))

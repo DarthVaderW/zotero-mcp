@@ -6,24 +6,18 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 from mcp.types import ToolAnnotations
 
+from zotero_mcp.doi_ops import op_crossref, op_find_dois
+from zotero_mcp.library_ops import op_check_pdfs, op_export, op_update_item
 from zotero_mcp.operations import (
-    op_add_identifier,
-    op_arxiv,
     op_attach_arxiv_sidecars,
-    op_attachment_text,
     op_attach_pdf,
     op_attach_snapshot,
-    op_batch_add,
+    op_attachment_text,
     op_capture_arxiv,
-    op_check_pdfs,
     op_children,
     op_collections,
     op_create_item,
-    op_crossref,
     op_delete_items,
-    op_export,
-    op_fetch_pdfs,
-    op_find_dois,
     op_get,
     op_import_identifier,
     op_items,
@@ -31,7 +25,6 @@ from zotero_mcp.operations import (
     op_search,
     op_search_arxiv,
     op_tags,
-    op_update_item,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -39,17 +32,27 @@ ROOT = Path(__file__).resolve().parents[1]
 mcp = FastMCP(
     "zotero-mcp",
     instructions=(
-        "Use Zotero as the bibliographic source of truth. The default backend is Zotero 10+'s official Local API. "
+        "Use Zotero as the bibliographic source of truth. This server uses Zotero 10+'s official Local API only. "
         "Read before updating; writes use Zotero object-version preconditions. Prefer import tools over raw creation "
         "when a DOI, ISBN, PMID, or arXiv ID exists. Deletion moves items to Zotero trash; permanent deletion is not exposed."
     ),
 )
 
-READ_ONLY = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False)
-READ_NETWORK = ToolAnnotations(readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True)
-WRITE_LOCAL = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
-WRITE_NETWORK = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True)
-TRASH_ITEMS = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
+READ_ONLY = ToolAnnotations(
+    readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=False
+)
+READ_NETWORK = ToolAnnotations(
+    readOnlyHint=True, destructiveHint=False, idempotentHint=True, openWorldHint=True
+)
+WRITE_LOCAL = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False
+)
+WRITE_NETWORK = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=True
+)
+TRASH_ITEMS = ToolAnnotations(
+    readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False
+)
 
 
 def root_relative_path(path: str) -> str:
@@ -75,17 +78,6 @@ def zotero_search_items(query: str, limit: int = 25) -> dict[str, Any]:
 def zotero_get_item(key: str) -> dict[str, Any]:
     """Get a local Zotero item and its children by item key."""
     return op_get(key)
-
-
-@mcp.tool(annotations=WRITE_NETWORK)
-def zotero_import_arxiv(
-    arxiv: str,
-    collection: str | None = None,
-    attach_html: bool = True,
-    force: bool = False,
-) -> dict[str, Any]:
-    """Import or reuse an arXiv item in local Zotero, attach the PDF, and try arXiv HTML."""
-    return op_arxiv(arxiv, collection_name_or_key=collection, attach_html=attach_html, force=force)
 
 
 @mcp.tool(annotations=READ_NETWORK)
@@ -165,40 +157,14 @@ def zotero_attach_pdf(key: str, file: str) -> dict[str, Any]:
 
 
 @mcp.tool(annotations=WRITE_NETWORK)
-def zotero_attach_snapshot(key: str, url: str, title: str = "Web Page Snapshot") -> dict[str, Any]:
+def zotero_attach_snapshot(
+    key: str, url: str, title: str = "Web Page Snapshot"
+) -> dict[str, Any]:
     """Download one HTML document and store it as an imported_url attachment.
 
     This is an HTML copy, not a recursive browser snapshot with all subresources.
     """
     return op_attach_snapshot(key, url, title=title)
-
-
-@mcp.tool(annotations=WRITE_NETWORK)
-def zotero_fetch_pdf(
-    key: str | None = None,
-    file: str | None = None,
-    title: str = "Full Text PDF",
-    collection: str | None = None,
-    limit: int | None = None,
-    dry_run: bool = False,
-    download_only: bool = False,
-) -> dict[str, Any]:
-    """Fetch OA PDFs remotely or attach a local PDF when key and file are provided."""
-    if bool(key) != bool(file):
-        raise ValueError(
-            "Local PDF attach mode requires both 'key' and 'file'. "
-            "Provide both to attach a local PDF, or omit both for remote Web API fetch mode."
-        )
-    return op_fetch_pdfs(
-        key=key,
-        file=root_relative_path(file) if file else None,
-        title=title,
-        collection=collection,
-        limit=limit,
-        dry_run=dry_run,
-        download_only=download_only,
-        download_dir=str(ROOT / "pdfs"),
-    )
 
 
 @mcp.tool(annotations=READ_ONLY)
@@ -237,32 +203,8 @@ def zotero_get_attachment_text(
 
 @mcp.tool(annotations=READ_ONLY)
 def zotero_check_pdfs() -> dict[str, Any]:
-    """Report which library items have or are missing PDF attachments (Web API)."""
+    """Report which local library items have or are missing PDF attachments."""
     return op_check_pdfs()
-
-
-@mcp.tool(annotations=WRITE_NETWORK)
-def zotero_add_by_identifier(
-    identifier: str,
-    id_type: str = "doi",
-    collection: str | None = None,
-    tags: str | None = None,
-    force: bool = False,
-) -> dict[str, Any]:
-    """Add an item to the library by identifier via the Zotero Web API.
-
-    id_type is one of 'doi', 'isbn', 'pmid'. tags is a comma-separated string.
-    Set force=True to add even when a duplicate is detected.
-    """
-    if id_type not in {"doi", "isbn", "pmid"}:
-        raise ValueError("id_type must be one of: doi, isbn, pmid")
-    return op_add_identifier(
-        identifier,
-        id_type=id_type,
-        collection=collection,
-        tags=tags,
-        force=force,
-    )
 
 
 @mcp.tool(annotations=WRITE_LOCAL)
@@ -276,7 +218,7 @@ def zotero_update_item(
     remove_tags: str | None = None,
     add_collection: str | None = None,
 ) -> dict[str, Any]:
-    """Update metadata on a library item via the Zotero Web API.
+    """Update metadata on a local library item via the official Local API.
 
     add_tags/remove_tags are comma-separated strings. Only provided fields change.
     """
@@ -298,7 +240,7 @@ def zotero_export(
     collection: str | None = None,
     output: str | None = None,
 ) -> dict[str, Any]:
-    """Export library items via the Web API. format is 'bibtex', 'ris', or 'csljson'.
+    """Export local library items. format is 'bibtex', 'ris', or 'csljson'.
 
     When output is given, writes to that path; otherwise returns the export text.
     """
@@ -312,29 +254,6 @@ def zotero_export(
 
 
 @mcp.tool(annotations=WRITE_NETWORK)
-def zotero_batch_add(
-    file: str,
-    id_type: str = "doi",
-    collection: str | None = None,
-    tags: str | None = None,
-    force: bool = False,
-) -> dict[str, Any]:
-    """Batch-add identifiers (one per line in `file`) via the Web API.
-
-    id_type is one of 'doi', 'isbn', 'pmid'. tags is a comma-separated string.
-    """
-    if id_type not in {"doi", "isbn", "pmid"}:
-        raise ValueError("id_type must be one of: doi, isbn, pmid")
-    return op_batch_add(
-        root_relative_path(file),
-        id_type=id_type,
-        collection=collection,
-        tags=tags,
-        force=force,
-    )
-
-
-@mcp.tool(annotations=WRITE_NETWORK)
 def zotero_find_dois(
     apply: bool = False,
     limit: int | None = None,
@@ -344,7 +263,7 @@ def zotero_find_dois(
     return op_find_dois(apply=apply, limit=limit, collection=collection)
 
 
-@mcp.tool(annotations=READ_NETWORK)
+@mcp.tool(annotations=READ_ONLY)
 def zotero_crossref(file: str) -> dict[str, Any]:
     """Cross-reference 'Author (Year)' citations in a text/markdown file against the library."""
     return op_crossref(root_relative_path(file))

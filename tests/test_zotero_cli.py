@@ -10,10 +10,9 @@ import io
 import pathlib
 import subprocess
 import sys
-from types import SimpleNamespace
 import unittest
+from types import SimpleNamespace
 from unittest import mock
-
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -28,6 +27,7 @@ class ZoteroCLITest(unittest.TestCase):
     def setUpClass(cls):
         cls.mod = load_module("zotero_mcp.operations")
         cls.local_ops = load_module("zotero_mcp.local_ops")
+        cls.validators = load_module("zotero_mcp.validators")
         cls.cli = load_module("zotero_mcp.cli")
 
     def run_cli(self, *args):
@@ -43,27 +43,16 @@ class ZoteroCLITest(unittest.TestCase):
     def test_help_root(self):
         proc = self.run_cli("--help")
         self.assertEqual(proc.returncode, 0)
-        self.assertIn("fetch-pdfs", proc.stdout)
         self.assertIn("official Local API", proc.stdout)
-
-    def test_help_fetch_pdfs(self):
-        proc = self.run_cli("fetch-pdfs", "--help")
-        self.assertEqual(proc.returncode, 0)
-        self.assertIn("--key", proc.stdout)
-        self.assertIn("--dry-run", proc.stdout)
-        self.assertIn("--link-only", proc.stdout)
+        self.assertIn("import-doi", proc.stdout)
+        for retired_command in ("fetch-pdfs", "add-doi", "batch-add"):
+            self.assertNotIn(retired_command, proc.stdout)
 
     def test_help_attach_snapshot(self):
         proc = self.run_cli("attach-snapshot", "--help")
         self.assertEqual(proc.returncode, 0)
         self.assertIn("--url", proc.stdout)
         self.assertIn("--title", proc.stdout)
-
-    def test_help_arxiv_has_html_toggle(self):
-        proc = self.run_cli("arxiv", "--help")
-        self.assertEqual(proc.returncode, 0)
-        self.assertIn("--no-html", proc.stdout)
-        self.assertIn("--force", proc.stdout)
 
     def test_help_search_arxiv(self):
         proc = self.run_cli("search-arxiv", "--help")
@@ -102,7 +91,11 @@ class ZoteroCLITest(unittest.TestCase):
             mock.patch.object(
                 self.cli,
                 "op_attachment_text",
-                return_value={"text": "readable text", "warnings": [], "source": "zotero-ft-cache"},
+                return_value={
+                    "text": "readable text",
+                    "warnings": [],
+                    "source": "zotero-ft-cache",
+                },
             ),
             contextlib.redirect_stdout(stdout),
         ):
@@ -117,13 +110,19 @@ class ZoteroCLITest(unittest.TestCase):
             mock.patch.object(
                 self.cli,
                 "op_attachment_text",
-                return_value={"text": "readable text", "warnings": [], "source": "attachment-file"},
+                return_value={
+                    "text": "readable text",
+                    "warnings": [],
+                    "source": "attachment-file",
+                },
             ) as attachment_text,
             contextlib.redirect_stdout(io.StringIO()),
         ):
             self.cli.cmd_attachment_text(args)
 
-        attachment_text.assert_called_once_with("ATT12345", max_chars=123, prefer_cache=False)
+        attachment_text.assert_called_once_with(
+            "ATT12345", max_chars=123, prefer_cache=False
+        )
 
     def test_attachment_text_cli_exits_nonzero_without_text(self):
         args = SimpleNamespace(key="ATT12345", max_chars=20000, no_cache=False)
@@ -133,7 +132,11 @@ class ZoteroCLITest(unittest.TestCase):
             mock.patch.object(
                 self.cli,
                 "op_attachment_text",
-                return_value={"text": "", "warnings": ["PDF attachment has no Zotero full-text cache"], "source": None},
+                return_value={
+                    "text": "",
+                    "warnings": ["PDF attachment has no Zotero full-text cache"],
+                    "source": None,
+                },
             ),
             contextlib.redirect_stderr(stderr),
         ):
@@ -146,21 +149,22 @@ class ZoteroCLITest(unittest.TestCase):
 
     def test_arxiv_id_extract(self):
         self.assertEqual(self.mod._extract_arxiv_id("2401.01234"), "2401.01234")
-        self.assertEqual(self.mod._extract_arxiv_id("https://arxiv.org/abs/2401.01234v2"), "2401.01234v2")
-        self.assertEqual(self.mod._extract_arxiv_id("https://arxiv.org/html/2401.01234v2"), "2401.01234v2")
+        self.assertEqual(
+            self.mod._extract_arxiv_id("https://arxiv.org/abs/2401.01234v2"),
+            "2401.01234v2",
+        )
+        self.assertEqual(
+            self.mod._extract_arxiv_id("https://arxiv.org/html/2401.01234v2"),
+            "2401.01234v2",
+        )
 
     def test_validators(self):
-        self.assertTrue(self.mod.validate_doi("10.1000/abc"))
-        self.assertFalse(self.mod.validate_doi("not-a-doi"))
-        self.assertTrue(self.mod.validate_item_key("A1B2C3D4"))
-        self.assertFalse(self.mod.validate_item_key("short"))
-        self.assertTrue(self.mod.validate_isbn("978-0306406157"))
-        self.assertFalse(self.mod.validate_isbn("abc"))
-
-    def test_build_pdf_filename(self):
-        d = {"creators": [{"lastName": "smith"}], "date": "2021-10-01"}
-        name = self.mod._make_pdf_filename(d, "ABC12345")
-        self.assertEqual(name, "Smith2021_ABC12345.pdf")
+        self.assertTrue(self.validators.validate_doi("10.1000/abc"))
+        self.assertFalse(self.validators.validate_doi("not-a-doi"))
+        self.assertTrue(self.validators.validate_item_key("A1B2C3D4"))
+        self.assertFalse(self.validators.validate_item_key("short"))
+        self.assertTrue(self.validators.validate_isbn("978-0306406157"))
+        self.assertFalse(self.validators.validate_isbn("abc"))
 
     def test_create_item_preserves_zotero_fields(self):
         captured = {}

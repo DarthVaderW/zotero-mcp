@@ -9,9 +9,9 @@ import urllib.parse
 import urllib.request
 
 from zotero_mcp.config import CROSSREF_EMAIL, DOI_EXCLUDED_ITEM_TYPES
+from zotero_mcp.library_ops import _patch_item_field
+from zotero_mcp.local_api import get_local_client
 from zotero_mcp.metadata import _extract_year, _first_author_last, _title_similarity
-from zotero_mcp.web_api import get_api_config, paginate_all
-from zotero_mcp.web_items import _patch_item_field
 
 
 def _crossref_search(title, first_author):
@@ -47,7 +47,9 @@ def _match_crossref_result(work, zotero_title, zotero_year, zotero_first_author)
         author_found = False
         for a in work.get("author", []):
             family = a.get("family", "").lower()
-            if family and (zotero_first_author in family or family in zotero_first_author):
+            if family and (
+                zotero_first_author in family or family in zotero_first_author
+            ):
                 author_found = True
                 break
         if not author_found:
@@ -57,7 +59,10 @@ def _match_crossref_result(work, zotero_title, zotero_year, zotero_first_author)
     if not doi:
         return None
 
-    return (doi, {"similarity": round(sim * 100, 1), "cr_title": cr_title, "cr_year": cr_year})
+    return (
+        doi,
+        {"similarity": round(sim * 100, 1), "cr_title": cr_title, "cr_year": cr_year},
+    )
 
 
 def _extract_citations(text):
@@ -73,7 +78,8 @@ def _extract_citations(text):
 
 
 def op_crossref(file):
-    api_key, prefix = get_api_config()
+    client = get_local_client()
+    client.probe()
     with open(file, "r", encoding="utf-8") as f:
         text = f.read()
 
@@ -81,8 +87,12 @@ def op_crossref(file):
     if not citations:
         return {"total": 0, "found": [], "missing": []}
 
-    items = paginate_all(f"{prefix}/items/top", api_key)
-    items = [item for item in items if item["data"].get("itemType") not in ("attachment", "note")]
+    items = client.get_all_json(f"{client.library_prefix}/items/top")
+    items = [
+        item
+        for item in items
+        if item["data"].get("itemType") not in ("attachment", "note")
+    ]
     lib_index = {}
     for item in items:
         data = item["data"]
@@ -101,7 +111,10 @@ def op_crossref(file):
             match_item = lib_index[key][0]
         else:
             for (lib_author, lib_year), lib_items in lib_index.items():
-                if lib_year == year and (lib_author.startswith(key[0][:4]) or key[0].startswith(lib_author[:4])):
+                if lib_year == year and (
+                    lib_author.startswith(key[0][:4])
+                    or key[0].startswith(lib_author[:4])
+                ):
                     match_item = lib_items[0]
                     break
         if match_item:
@@ -121,9 +134,15 @@ def op_crossref(file):
 
 
 def op_find_dois(apply=False, limit=None, collection=None, sleep_seconds=1):
-    api_key, prefix = get_api_config()
-    path = f"{prefix}/collections/{collection}/items/top" if collection else f"{prefix}/items/top"
-    items = paginate_all(path, api_key)
+    client = get_local_client()
+    client.probe()
+    prefix = client.library_prefix
+    path = (
+        f"{prefix}/collections/{collection}/items/top"
+        if collection
+        else f"{prefix}/items/top"
+    )
+    items = client.get_all_json(path)
 
     candidates = []
     skipped_has_doi = skipped_wrong_type = 0
@@ -178,7 +197,7 @@ def op_find_dois(apply=False, limit=None, collection=None, sleep_seconds=1):
         if apply:
             try:
                 version = item.get("version", item.get("data", {}).get("version", 0))
-                _patch_item_field(api_key, prefix, key, "DOI", doi, version)
+                _patch_item_field(key, "DOI", doi, version)
                 written += 1
                 entry["written"] = True
             except Exception as e:

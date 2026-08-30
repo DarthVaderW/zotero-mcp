@@ -1,7 +1,7 @@
 {
   "name": "zotero-mcp",
   "displayName": "Zotero MCP",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Connect Claude Code to Zotero through the official Local API.",
   "author": {
     "name": "Haotian Wang",
@@ -13,13 +13,6 @@
   "keywords": ["zotero", "mcp", "papers"],
   "mcpServers": "./claude.mcp.json",
   "userConfig": {
-    "zotero_backend": {
-      "type": "string",
-      "title": "Zotero backend",
-      "description": "Use local for Zotero 10+ Local API or web for zotero.org.",
-      "default": "local",
-      "required": true
-    },
     "zotero_local_api_url": {
       "type": "string",
       "title": "Zotero Local API URL",
@@ -33,21 +26,6 @@
       "description": "Use /users/0 for the current personal library.",
       "default": "/users/0",
       "required": true
-    },
-    "zotero_api_key": {
-      "type": "string",
-      "title": "Zotero Web API key",
-      "description": "Optional Zotero Web API key when zotero_backend is web."
-    },
-    "zotero_user_id": {
-      "type": "string",
-      "title": "Zotero user ID",
-      "description": "Optional Zotero user id for Web API workflows."
-    },
-    "zotero_group_id": {
-      "type": "string",
-      "title": "Zotero group ID",
-      "description": "Optional Zotero group id for Web API workflows."
     },
     "crossref_email": {
       "type": "string",

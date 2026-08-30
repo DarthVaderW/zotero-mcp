@@ -4,11 +4,22 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
 import re
 import tempfile
+from pathlib import Path
 
-from zotero_mcp.config import PDF_SOURCES as PDF_SOURCES
+from zotero_mcp.arxiv import (
+    _extract_arxiv_id,
+    _find_existing_pdf_child,
+    attach_arxiv_sidecars,
+    import_arxiv,
+    search_arxiv,
+)
+from zotero_mcp.config import PDF_SOURCES
+from zotero_mcp.identifiers import (
+    _translate_identifier,
+    clean_translated_item_for_local,
+)
 from zotero_mcp.local_api import (
     db_add_item_to_collection,
     db_add_snapshot,
@@ -21,87 +32,31 @@ from zotero_mcp.local_api import (
     db_get_item,
     db_get_items,
     db_get_tags,
-    db_ping,
     db_search,
     ensure_local_api,
 )
-from zotero_mcp.errors import CommandError as CommandError
-from zotero_mcp.arxiv import _extract_arxiv_id as _extract_arxiv_id
-from zotero_mcp.arxiv import _find_existing_pdf_child as _find_existing_pdf_child
-from zotero_mcp.arxiv import attach_arxiv_sidecars as attach_arxiv_sidecars
-from zotero_mcp.arxiv import import_arxiv as import_arxiv
-from zotero_mcp.arxiv import search_arxiv as search_arxiv
-from zotero_mcp.doi_ops import (
-    _crossref_search as _crossref_search,
-    _extract_citations as _extract_citations,
-    _match_crossref_result as _match_crossref_result,
-    op_crossref as op_crossref,
-    op_find_dois as op_find_dois,
-)
-from zotero_mcp.local_ops import attach_pdf_from_file as attach_pdf_from_file
-from zotero_mcp.local_ops import create_item as create_item
-from zotero_mcp.metadata import (
-    _extract_year as _extract_year,
-    _first_author_last as _first_author_last,
-    _normalize_text as _normalize_text,
-    _title_similarity as _title_similarity,
-    fmt_creators as fmt_creators,
-    fmt_item_short as fmt_item_short,
-)
-from zotero_mcp.pdfs import _download_pdf as _download_pdf
-from zotero_mcp.identifiers import (
-    _check_duplicate_by_metadata as _check_duplicate_by_metadata,
-    _doi_to_item as _doi_to_item,
-    _identifier_lookup_url as _identifier_lookup_url,
-    _translate_identifier as _translate_identifier,
-    clean_translated_item_for_local as clean_translated_item_for_local,
-    op_add_identifier as op_add_identifier,
-    op_batch_add as op_batch_add,
-)
-from zotero_mcp.pdf_discovery import (
-    _bulk_find_pdf_parents as _bulk_find_pdf_parents,
-    _create_linked_url_attachment as _create_linked_url_attachment,
-    _find_pdf_source as _find_pdf_source,
-    _make_pdf_filename as _make_pdf_filename,
-    _try_doi_content_negotiation as _try_doi_content_negotiation,
-    _try_semantic_scholar as _try_semantic_scholar,
-    _try_unpaywall as _try_unpaywall,
-    _upload_pdf_to_zotero as _upload_pdf_to_zotero,
-    op_fetch_pdfs as op_fetch_pdfs,
-)
-from zotero_mcp.validators import (
-    require_item_key,
-    require_item_type as require_item_type,
-    validate_doi as validate_doi,
-    validate_isbn as validate_isbn,
-    validate_item_key as validate_item_key,
-)
-from zotero_mcp.web_items import (
-    _patch_item_field as _patch_item_field,
-    op_check_pdfs as op_check_pdfs,
-    op_export as op_export,
-    op_update_item as op_update_item,
-)
-from zotero_mcp.web_api import (
-    api_get_json as api_get_json,
-    api_request as api_request,
-    get_api_config as get_api_config,
-    paginate_all as paginate_all,
-)
+from zotero_mcp.local_ops import attach_pdf_from_file, create_item
+from zotero_mcp.pdf_discovery import _find_pdf_source
+from zotero_mcp.pdfs import _download_pdf
+from zotero_mcp.validators import require_item_key
+
 
 def op_ping():
     details = ensure_local_api()
     return details
+
 
 def op_items(limit=25, collection_key=None):
     ensure_local_api()
     items = db_get_items(limit=limit, collection_key=collection_key) or []
     return {"total": len(items), "items": items}
 
+
 def op_search(query, limit=25):
     ensure_local_api()
     items = db_search(query, limit=limit) or []
     return {"total": len(items), "items": items}
+
 
 def op_get(key):
     ensure_local_api()
@@ -110,21 +65,25 @@ def op_get(key):
     children = db_get_children(key)
     return {"item": item, "children": children}
 
+
 def op_collections():
     ensure_local_api()
     cols = db_get_collections() or []
     return {"total": len(cols), "collections": cols}
+
 
 def op_tags():
     ensure_local_api()
     tags = db_get_tags() or []
     return {"total": len(tags), "tags": tags}
 
+
 def op_children(key):
     ensure_local_api()
     require_item_key(key)
     children = db_get_children(key) or []
     return {"total": len(children), "children": children}
+
 
 TEXT_ATTACHMENT_SUFFIXES = {
     ".bib",
@@ -157,6 +116,7 @@ def _read_attachment_text(path: Path, max_chars: int) -> tuple[str, bool]:
         text = text[:max_chars]
     return text, truncated
 
+
 def _is_text_attachment(path: Path, content_type: str) -> bool:
     normalized_type = content_type.split(";", 1)[0].strip().lower()
     return (
@@ -164,6 +124,7 @@ def _is_text_attachment(path: Path, content_type: str) -> bool:
         or normalized_type in TEXT_ATTACHMENT_CONTENT_TYPES
         or path.suffix.lower() in TEXT_ATTACHMENT_SUFFIXES
     )
+
 
 def op_attachment_text(key, max_chars=20000, prefer_cache=True):
     if max_chars < 1 or max_chars > 200000:
@@ -174,10 +135,16 @@ def op_attachment_text(key, max_chars=20000, prefer_cache=True):
     if not info:
         raise RuntimeError(f"Attachment not found: {key}")
     if not isinstance(info, dict):
-        raise RuntimeError("Zotero Local API returned an unexpected attachment response.")
+        raise RuntimeError(
+            "Zotero Local API returned an unexpected attachment response."
+        )
 
     file_path = Path(info.get("filePath") or "") if info.get("filePath") else None
-    storage_dir = Path(info.get("storageDirectory") or "") if info.get("storageDirectory") else None
+    storage_dir = (
+        Path(info.get("storageDirectory") or "")
+        if info.get("storageDirectory")
+        else None
+    )
     cache_path = None
     if storage_dir:
         cache_path = storage_dir / ".zotero-ft-cache"
@@ -201,7 +168,9 @@ def op_attachment_text(key, max_chars=20000, prefer_cache=True):
     truncated = False
     content_type = str(info.get("contentType") or "")
     if selected_path:
-        if source == "attachment-file" and not _is_text_attachment(selected_path, content_type):
+        if source == "attachment-file" and not _is_text_attachment(
+            selected_path, content_type
+        ):
             if cache_path and cache_path.exists():
                 selected_path = cache_path
                 source = "zotero-ft-cache"
@@ -214,7 +183,9 @@ def op_attachment_text(key, max_chars=20000, prefer_cache=True):
         if source:
             text, truncated = _read_attachment_text(selected_path, max_chars)
     else:
-        warnings.append("No readable local attachment file or Zotero full-text cache was found.")
+        warnings.append(
+            "No readable local attachment file or Zotero full-text cache was found."
+        )
 
     return {
         "key": key,
@@ -231,29 +202,39 @@ def op_attachment_text(key, max_chars=20000, prefer_cache=True):
         "warnings": warnings,
     }
 
+
 def op_create_item(meta):
     ensure_local_api()
     return {"item_key": create_item(meta)}
+
 
 def op_attach_pdf(key, file, title="Full Text PDF"):
     ensure_local_api()
     require_item_key(key)
     return {"attachment_key": attach_pdf_from_file(key, file, title=title)}
 
+
 def _identifier_result_item(item_key, created=False, existing=None):
     return {
         "created": created,
         "item_key": item_key,
         "zoteroItemKey": item_key,
-        "zoteroSelectUri": f"zotero://select/library/items/{item_key}" if item_key else "",
+        "zoteroSelectUri": f"zotero://select/library/items/{item_key}"
+        if item_key
+        else "",
         "existing": existing,
     }
 
-def _local_pdf_result(item_key, doi, attach_pdf=True, title="Full Text PDF", children=None):
+
+def _local_pdf_result(
+    item_key, doi, attach_pdf=True, title="Full Text PDF", children=None
+):
     if not attach_pdf:
         return {"pdfStatus": "skipped", "pdfSourceAttempts": []}
 
-    current_children = list(children if children is not None else (db_get_children(item_key) or []))
+    current_children = list(
+        children if children is not None else (db_get_children(item_key) or [])
+    )
     pdf_child = _find_existing_pdf_child(current_children)
     if pdf_child:
         key = pdf_child.get("key")
@@ -278,7 +259,9 @@ def _local_pdf_result(item_key, doi, attach_pdf=True, title="Full Text PDF", chi
         return {
             "pdfStatus": "needs_user_file",
             "pdfSourceAttempts": source_names,
-            "warnings": ["No open PDF source was found; attach a user-provided local file later."],
+            "warnings": [
+                "No open PDF source was found; attach a user-provided local file later."
+            ],
         }
 
     pdf_url, source_url, source_name = source_info
@@ -318,10 +301,12 @@ def _local_pdf_result(item_key, doi, attach_pdf=True, title="Full Text PDF", chi
         "pdfSourceAttempts": source_names,
     }
 
+
 def _identifier_pdf_doi(identifier, id_type, payload):
     if id_type == "doi":
         return identifier
     return (payload or {}).get("DOI", "")
+
 
 def op_import_identifier(
     identifier,
@@ -345,7 +330,9 @@ def op_import_identifier(
     collection_result = None
 
     if not force:
-        existing = db_find_item_by_identifier(identifier, id_type=id_type, title=title) or []
+        existing = (
+            db_find_item_by_identifier(identifier, id_type=id_type, title=title) or []
+        )
         if existing:
             item_key = existing[0].get("key")
             if item_key and collection:
@@ -353,18 +340,24 @@ def op_import_identifier(
                     collection_result = db_add_item_to_collection(item_key, collection)
                 except Exception as exc:
                     warnings.append(f"collection update failed: {exc}")
-            pdf_result = _local_pdf_result(
-                item_key,
-                _identifier_pdf_doi(identifier, id_type, payload),
-                attach_pdf=attach_pdf,
-                children=db_get_children(item_key) if item_key else [],
-            ) if item_key else {"pdfStatus": "skipped", "pdfSourceAttempts": []}
+            pdf_result = (
+                _local_pdf_result(
+                    item_key,
+                    _identifier_pdf_doi(identifier, id_type, payload),
+                    attach_pdf=attach_pdf,
+                    children=db_get_children(item_key) if item_key else [],
+                )
+                if item_key
+                else {"pdfStatus": "skipped", "pdfSourceAttempts": []}
+            )
             warnings.extend(pdf_result.pop("warnings", []))
             return {
                 "status": "existing",
                 "identifier": identifier,
                 "idType": id_type,
-                **_identifier_result_item(item_key, created=False, existing=existing[0]),
+                **_identifier_result_item(
+                    item_key, created=False, existing=existing[0]
+                ),
                 "matches": existing,
                 "collection": collection_result,
                 "warnings": warnings,
@@ -395,6 +388,7 @@ def op_import_identifier(
         **pdf_result,
     }
 
+
 def op_attach_arxiv_sidecars(key, arxiv, attach_html=True):
     ensure_local_api()
     require_item_key(key)
@@ -420,6 +414,7 @@ def op_attach_arxiv_sidecars(key, arxiv, attach_html=True):
         **sidecar_result,
     }
 
+
 def _existing_arxiv_result(arxiv_id, existing, collection=None, attach_html=True):
     item = existing[0] if existing else {}
     item_key = item.get("key")
@@ -433,7 +428,9 @@ def _existing_arxiv_result(arxiv_id, existing, collection=None, attach_html=True
     sidecar_result = {}
     if item_key:
         try:
-            sidecar_result = attach_arxiv_sidecars(item_key, arxiv_id, attach_html=attach_html)
+            sidecar_result = attach_arxiv_sidecars(
+                item_key, arxiv_id, attach_html=attach_html
+            )
             warnings.extend(sidecar_result.get("warnings", []))
         except Exception as exc:
             warnings.append(f"sidecar top-up failed: {exc}")
@@ -463,6 +460,7 @@ def _existing_arxiv_result(arxiv_id, existing, collection=None, attach_html=True
         "warnings": warnings,
     }
 
+
 def op_arxiv(arxiv, collection_name_or_key=None, attach_html=True, force=False):
     ensure_local_api()
     try:
@@ -478,25 +476,41 @@ def op_arxiv(arxiv, collection_name_or_key=None, attach_html=True, force=False):
                 collection=collection_name_or_key,
                 attach_html=attach_html,
             )
-    result = import_arxiv(arxiv_id, collection_name_or_key=collection_name_or_key, attach_html=attach_html)
+    result = import_arxiv(
+        arxiv_id, collection_name_or_key=collection_name_or_key, attach_html=attach_html
+    )
     result.setdefault("status", "added")
     return result
+
 
 def op_search_arxiv(query, limit=5):
     return search_arxiv(query, limit=limit)
 
-def op_capture_arxiv(paper, confirmed_arxiv_id=None, collection=None, attach_html=True, force=False):
+
+def op_capture_arxiv(
+    paper, confirmed_arxiv_id=None, collection=None, attach_html=True, force=False
+):
     paper = (paper or "").strip()
     if not paper:
         raise ValueError("paper is required")
     if confirmed_arxiv_id:
-        return op_arxiv(confirmed_arxiv_id, collection_name_or_key=collection, attach_html=attach_html, force=force)
+        return op_arxiv(
+            confirmed_arxiv_id,
+            collection_name_or_key=collection,
+            attach_html=attach_html,
+            force=force,
+        )
     try:
         arxiv_id = _extract_arxiv_id(paper)
     except ValueError:
         arxiv_id = None
     if arxiv_id:
-        return op_arxiv(arxiv_id, collection_name_or_key=collection, attach_html=attach_html, force=force)
+        return op_arxiv(
+            arxiv_id,
+            collection_name_or_key=collection,
+            attach_html=attach_html,
+            force=force,
+        )
     search = op_search_arxiv(paper, limit=5)
     return {
         "status": "needs_selection",
@@ -505,11 +519,13 @@ def op_capture_arxiv(paper, confirmed_arxiv_id=None, collection=None, attach_htm
         "candidates": search["candidates"],
     }
 
+
 def op_attach_snapshot(key, url, title="Web Page Snapshot"):
     ensure_local_api()
     require_item_key(key)
     snapshot_key = db_add_snapshot(key, url, title=title)
     return {"snapshot_key": snapshot_key, "url": url, "title": title}
+
 
 def op_delete_items(keys, permanent=False):
     ensure_local_api()

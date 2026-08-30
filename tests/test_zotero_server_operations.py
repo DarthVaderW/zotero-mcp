@@ -3,19 +3,16 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 import sys
 import tempfile
 import unittest
-import urllib.error
+from pathlib import Path
 from unittest import mock
-
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zotero_mcp import arxiv, doi_ops, identifiers, operations, pdf_discovery, server, web_api, web_items
+from zotero_mcp import arxiv, doi_ops, library_ops, operations, server
 
 
 class ZoteroServerOperationsTest(unittest.TestCase):
@@ -24,7 +21,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "db_search", return_value=fake_items) as db_search,
+            mock.patch.object(
+                operations, "db_search", return_value=fake_items
+            ) as db_search,
         ):
             result = server.zotero_search_items("needle", limit=3)
 
@@ -37,11 +36,18 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_get_item", return_value=item),
-            mock.patch.object(operations, "db_delete_item", return_value={"success": True, "mode": "trash"}),
+            mock.patch.object(
+                operations,
+                "db_delete_item",
+                return_value={"success": True, "mode": "trash"},
+            ),
         ):
             result = server.zotero_delete_items(["ABC12345"])
 
-        self.assertEqual(result["deleted"], [{"key": "ABC12345", "title": "A title", "mode": "trash"}])
+        self.assertEqual(
+            result["deleted"],
+            [{"key": "ABC12345", "title": "A title", "mode": "trash"}],
+        )
         self.assertEqual(result["failed"], [])
 
     def test_server_search_calls_structured_operation(self):
@@ -54,7 +60,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result, expected)
 
     def test_server_preserves_root_relative_file_paths(self):
-        with mock.patch.object(server, "op_attach_pdf", return_value={"attachment_key": "ATT12345"}) as op_attach:
+        with mock.patch.object(
+            server, "op_attach_pdf", return_value={"attachment_key": "ATT12345"}
+        ) as op_attach:
             result = server.zotero_attach_pdf("ABC12345", "paper.pdf")
 
         op_attach.assert_called_once_with("ABC12345", str(server.ROOT / "paper.pdf"))
@@ -68,25 +76,6 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(RuntimeError, "Cannot reach Zotero Local API"):
                 server.zotero_get_item("ABC12345")
-
-    def test_api_request_raises_instead_of_exiting(self):
-        error = urllib.error.HTTPError(
-            "https://api.zotero.org/users/1/items",
-            403,
-            "Forbidden",
-            {},
-            None,
-        )
-
-        with (
-            mock.patch.object(web_api, "BACKEND", "web"),
-            mock.patch.object(web_api.urllib.request, "urlopen", side_effect=error),
-        ):
-            with self.assertRaises(operations.CommandError) as ctx:
-                operations.api_request("/users/1/items", "api-key")
-
-        self.assertEqual(ctx.exception.code, 403)
-        self.assertIn("API Error 403", str(ctx.exception))
 
     def test_attachment_text_prefers_zotero_full_text_cache(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -137,22 +126,28 @@ class ZoteroServerOperationsTest(unittest.TestCase):
                     },
                 ),
             ):
-                result = server.zotero_get_attachment_text("ATT12345", max_chars=3, prefer_cache=False)
+                result = server.zotero_get_attachment_text(
+                    "ATT12345", max_chars=3, prefer_cache=False
+                )
 
         self.assertEqual(result["source"], "attachment-file")
         self.assertEqual(result["text"], "abc")
         self.assertTrue(result["truncated"])
 
     def test_attachment_text_rejects_bad_max_chars_cleanly(self):
-        with mock.patch.object(operations, "ensure_local_api", return_value=None) as bridge:
+        with mock.patch.object(
+            operations, "ensure_local_api", return_value=None
+        ) as ensure_api:
             with self.assertRaisesRegex(RuntimeError, "max_chars"):
                 operations.op_attachment_text("ATT12345", max_chars=0)
-        bridge.assert_not_called()
+        ensure_api.assert_not_called()
 
     def test_attachment_text_rejects_unexpected_local_api_response(self):
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "db_get_attachment_file", return_value="not-a-dict"),
+            mock.patch.object(
+                operations, "db_get_attachment_file", return_value="not-a-dict"
+            ),
         ):
             with self.assertRaisesRegex(RuntimeError, "unexpected attachment response"):
                 operations.op_attachment_text("ATT12345")
@@ -177,7 +172,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
                     },
                 ),
             ):
-                result = server.zotero_get_attachment_text("ATT12345", prefer_cache=False)
+                result = server.zotero_get_attachment_text(
+                    "ATT12345", prefer_cache=False
+                )
 
         self.assertIsNone(result["source"])
         self.assertEqual(result["text"], "")
@@ -205,7 +202,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
                     },
                 ),
             ):
-                result = server.zotero_get_attachment_text("ATT12345", prefer_cache=False)
+                result = server.zotero_get_attachment_text(
+                    "ATT12345", prefer_cache=False
+                )
 
         self.assertEqual(result["source"], "zotero-ft-cache")
         self.assertEqual(result["text"], "indexed pdf text")
@@ -220,11 +219,16 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result, "https://arxiv.org/html/2401.01234v1")
 
     def test_fetch_arxiv_metadata_falls_back_on_invalid_xml(self):
-        fallback = {"title": "Fallback", "extra_fields": {"archiveLocation": "2401.01234"}}
+        fallback = {
+            "title": "Fallback",
+            "extra_fields": {"archiveLocation": "2401.01234"},
+        }
 
         with (
             mock.patch.object(arxiv, "_read_url", return_value=b"<not-xml"),
-            mock.patch.object(arxiv, "_fetch_arxiv_metadata_from_abs_page", return_value=fallback) as from_abs,
+            mock.patch.object(
+                arxiv, "_fetch_arxiv_metadata_from_abs_page", return_value=fallback
+            ) as from_abs,
         ):
             result = arxiv._fetch_arxiv_metadata("2401.01234")
 
@@ -232,10 +236,14 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result, fallback)
 
     def test_arxiv_query_value_escape(self):
-        self.assertEqual(arxiv._escape_arxiv_query_value('a "quoted" title'), r'a \"quoted\" title')
+        self.assertEqual(
+            arxiv._escape_arxiv_query_value('a "quoted" title'), r"a \"quoted\" title"
+        )
 
     def test_arxiv_title_score_uses_metadata_similarity(self):
-        self.assertGreater(arxiv._title_score("Retargeting Matters", "Retargeting Matters"), 0.9)
+        self.assertGreater(
+            arxiv._title_score("Retargeting Matters", "Retargeting Matters"), 0.9
+        )
 
     def test_import_arxiv_keeps_snapshot_result(self):
         meta = {
@@ -247,11 +255,21 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(arxiv, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)),
-            mock.patch.object(arxiv, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)),
-            mock.patch.object(arxiv, "_find_arxiv_html_url", return_value="https://arxiv.org/html/2401.01234v1"),
+            mock.patch.object(
+                arxiv, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)
+            ),
+            mock.patch.object(
+                arxiv, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)
+            ),
+            mock.patch.object(
+                arxiv,
+                "_find_arxiv_html_url",
+                return_value="https://arxiv.org/html/2401.01234v1",
+            ),
             mock.patch.object(arxiv, "create_item", return_value="ABC12345"),
-            mock.patch.object(arxiv, "db_add_snapshot", side_effect=["SNAP1234", "HTML1234"]) as add_snapshot,
+            mock.patch.object(
+                arxiv, "db_add_snapshot", side_effect=["SNAP1234", "HTML1234"]
+            ) as add_snapshot,
             mock.patch.object(arxiv, "_download_pdf", return_value=True),
             mock.patch.object(arxiv, "attach_pdf_from_file", return_value="ATT12345"),
         ):
@@ -261,7 +279,11 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             add_snapshot.call_args_list,
             [
                 mock.call("ABC12345", "https://arxiv.org/abs/2401.01234"),
-                mock.call("ABC12345", "https://arxiv.org/html/2401.01234v1", title="arXiv HTML Snapshot"),
+                mock.call(
+                    "ABC12345",
+                    "https://arxiv.org/html/2401.01234v1",
+                    title="arXiv HTML Snapshot",
+                ),
             ],
         )
         self.assertEqual(result["snapshot_key"], "SNAP1234")
@@ -279,8 +301,12 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(arxiv, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)),
-            mock.patch.object(arxiv, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)),
+            mock.patch.object(
+                arxiv, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)
+            ),
+            mock.patch.object(
+                arxiv, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)
+            ),
             mock.patch.object(arxiv, "_find_arxiv_html_url", return_value=None),
             mock.patch.object(arxiv, "create_item", return_value="ABC12345"),
             mock.patch.object(arxiv, "db_add_snapshot", return_value="SNAP1234"),
@@ -293,7 +319,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result["item_key"], "ABC12345")
         self.assertIsNone(result["attachment_key"])
         self.assertIsNone(result["pdfAttachmentKey"])
-        self.assertIn("pdf attachment failed: Failed to download arXiv PDF", result["warnings"][0])
+        self.assertIn(
+            "pdf attachment failed: Failed to download arXiv PDF", result["warnings"][0]
+        )
 
     def test_attach_arxiv_sidecars_reuses_existing_pdf_and_html(self):
         children = [
@@ -318,7 +346,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             mock.patch.object(arxiv, "_find_arxiv_html_url") as find_html,
             mock.patch.object(arxiv, "db_add_snapshot") as add_snapshot,
         ):
-            result = arxiv.attach_arxiv_sidecars("ABC12345", "2401.01234v1", children=children)
+            result = arxiv.attach_arxiv_sidecars(
+                "ABC12345", "2401.01234v1", children=children
+            )
 
         download_pdf.assert_not_called()
         find_html.assert_not_called()
@@ -330,10 +360,20 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
     def test_attach_arxiv_sidecars_adds_missing_pdf_and_html(self):
         with (
-            mock.patch.object(arxiv, "_download_pdf", return_value=True) as download_pdf,
-            mock.patch.object(arxiv, "attach_pdf_from_file", return_value="PDF12345") as attach_pdf,
-            mock.patch.object(arxiv, "_find_arxiv_html_url", return_value="https://arxiv.org/html/2401.01234v1"),
-            mock.patch.object(arxiv, "db_add_snapshot", return_value="HTML1234") as add_snapshot,
+            mock.patch.object(
+                arxiv, "_download_pdf", return_value=True
+            ) as download_pdf,
+            mock.patch.object(
+                arxiv, "attach_pdf_from_file", return_value="PDF12345"
+            ) as attach_pdf,
+            mock.patch.object(
+                arxiv,
+                "_find_arxiv_html_url",
+                return_value="https://arxiv.org/html/2401.01234v1",
+            ),
+            mock.patch.object(
+                arxiv, "db_add_snapshot", return_value="HTML1234"
+            ) as add_snapshot,
         ):
             result = arxiv.attach_arxiv_sidecars("ABC12345", "2401.01234", children=[])
 
@@ -368,10 +408,18 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         ]
 
         with (
-            mock.patch.object(arxiv, "_find_arxiv_html_url", return_value="https://arxiv.org/html/2401.01234v1"),
-            mock.patch.object(arxiv, "db_add_snapshot", return_value="HTML1234") as add_snapshot,
+            mock.patch.object(
+                arxiv,
+                "_find_arxiv_html_url",
+                return_value="https://arxiv.org/html/2401.01234v1",
+            ),
+            mock.patch.object(
+                arxiv, "db_add_snapshot", return_value="HTML1234"
+            ) as add_snapshot,
         ):
-            result = arxiv.attach_arxiv_sidecars("ABC12345", "2401.01234", children=children)
+            result = arxiv.attach_arxiv_sidecars(
+                "ABC12345", "2401.01234", children=children
+            )
 
         add_snapshot.assert_called_once_with(
             "ABC12345",
@@ -400,8 +448,12 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "db_find_arxiv_item", return_value=existing) as find_item,
-            mock.patch.object(operations, "attach_arxiv_sidecars", return_value=sidecars) as top_up,
+            mock.patch.object(
+                operations, "db_find_arxiv_item", return_value=existing
+            ) as find_item,
+            mock.patch.object(
+                operations, "attach_arxiv_sidecars", return_value=sidecars
+            ) as top_up,
             mock.patch.object(operations, "import_arxiv") as import_item,
         ):
             result = operations.op_arxiv("2401.01234")
@@ -421,7 +473,11 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_find_arxiv_item", return_value=existing),
-            mock.patch.object(operations, "attach_arxiv_sidecars", side_effect=RuntimeError("network down")),
+            mock.patch.object(
+                operations,
+                "attach_arxiv_sidecars",
+                side_effect=RuntimeError("network down"),
+            ),
             mock.patch.object(operations, "import_arxiv") as import_item,
         ):
             result = operations.op_arxiv("2401.01234")
@@ -435,19 +491,31 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
             mock.patch.object(operations, "db_find_arxiv_item") as find_item,
-            mock.patch.object(operations, "import_arxiv", return_value={"item_key": "NEW12345"}) as import_item,
+            mock.patch.object(
+                operations, "import_arxiv", return_value={"item_key": "NEW12345"}
+            ) as import_item,
         ):
             result = operations.op_arxiv("2401.01234", force=True)
 
         find_item.assert_not_called()
-        import_item.assert_called_once_with("2401.01234", collection_name_or_key=None, attach_html=True)
+        import_item.assert_called_once_with(
+            "2401.01234", collection_name_or_key=None, attach_html=True
+        )
         self.assertEqual(result["status"], "added")
 
     def test_capture_arxiv_title_is_read_only_until_confirmed(self):
         candidates = [{"arxiv_id": "2401.01234", "title": "Candidate"}]
 
         with (
-            mock.patch.object(operations, "search_arxiv", return_value={"query": "Candidate", "total": 1, "candidates": candidates}) as search,
+            mock.patch.object(
+                operations,
+                "search_arxiv",
+                return_value={
+                    "query": "Candidate",
+                    "total": 1,
+                    "candidates": candidates,
+                },
+            ) as search,
             mock.patch.object(operations, "import_arxiv") as import_item,
         ):
             result = operations.op_capture_arxiv("Candidate")
@@ -458,7 +526,11 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result["candidates"], candidates)
 
     def test_capture_arxiv_confirmed_candidate_writes(self):
-        with mock.patch.object(operations, "op_arxiv", return_value={"status": "added", "item_key": "ABC12345"}) as op_arxiv:
+        with mock.patch.object(
+            operations,
+            "op_arxiv",
+            return_value={"status": "added", "item_key": "ABC12345"},
+        ) as op_arxiv:
             result = operations.op_capture_arxiv(
                 "Candidate title",
                 confirmed_arxiv_id="2401.01234",
@@ -475,7 +547,11 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result, {"status": "added", "item_key": "ABC12345"})
 
     def test_capture_arxiv_bare_id_writes(self):
-        with mock.patch.object(operations, "op_arxiv", return_value={"status": "added", "item_key": "ABC12345"}) as op_arxiv:
+        with mock.patch.object(
+            operations,
+            "op_arxiv",
+            return_value={"status": "added", "item_key": "ABC12345"},
+        ) as op_arxiv:
             result = operations.op_capture_arxiv(
                 "https://arxiv.org/html/2401.01234v1",
                 collection="Inbox",
@@ -493,7 +569,9 @@ class ZoteroServerOperationsTest(unittest.TestCase):
     def test_attach_snapshot_operation_uses_local_api(self):
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "db_add_snapshot", return_value="SNAP1234") as add_snapshot,
+            mock.patch.object(
+                operations, "db_add_snapshot", return_value="SNAP1234"
+            ) as add_snapshot,
         ):
             result = operations.op_attach_snapshot(
                 "ABC12345",
@@ -515,24 +593,17 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             },
         )
 
-    def test_fetch_pdfs_local_mode_preserves_local_api_guard(self):
-        with (
-            mock.patch.object(pdf_discovery, "ensure_local_api", return_value=None) as ensure_api,
-            mock.patch.object(pdf_discovery, "attach_pdf_from_file", return_value="ATT12345") as attach_pdf,
-        ):
-            result = pdf_discovery.op_fetch_pdfs(key="ABC12345", file="/tmp/paper.pdf")
-
-        ensure_api.assert_called_once_with()
-        attach_pdf.assert_called_once_with("ABC12345", "/tmp/paper.pdf", title="Full Text PDF")
-        self.assertEqual(result, {"attachment_key": "ATT12345"})
-
-    def test_server_web_api_tools_call_structured_operations(self):
-        with mock.patch.object(server, "op_check_pdfs", return_value={"total": 0}) as op_check:
+    def test_server_local_tools_call_structured_operations(self):
+        with mock.patch.object(
+            server, "op_check_pdfs", return_value={"total": 0}
+        ) as op_check:
             self.assertEqual(server.zotero_check_pdfs(), {"total": 0})
         op_check.assert_called_once_with()
 
         expected = {"status": "updated", "key": "ABC12345", "changes": {"title": "T"}}
-        with mock.patch.object(server, "op_update_item", return_value=expected) as op_update:
+        with mock.patch.object(
+            server, "op_update_item", return_value=expected
+        ) as op_update:
             result = server.zotero_update_item("ABC12345", title="T")
         op_update.assert_called_once_with(
             "ABC12345",
@@ -546,18 +617,28 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         )
         self.assertEqual(result, expected)
 
-        with mock.patch.object(server, "op_attach_snapshot", return_value={"snapshot_key": "SNAP1234"}) as op_snapshot:
-            result = server.zotero_attach_snapshot("ABC12345", "https://arxiv.org/html/2401.01234v1", title="HTML")
-        op_snapshot.assert_called_once_with("ABC12345", "https://arxiv.org/html/2401.01234v1", title="HTML")
+        with mock.patch.object(
+            server, "op_attach_snapshot", return_value={"snapshot_key": "SNAP1234"}
+        ) as op_snapshot:
+            result = server.zotero_attach_snapshot(
+                "ABC12345", "https://arxiv.org/html/2401.01234v1", title="HTML"
+            )
+        op_snapshot.assert_called_once_with(
+            "ABC12345", "https://arxiv.org/html/2401.01234v1", title="HTML"
+        )
         self.assertEqual(result, {"snapshot_key": "SNAP1234"})
 
-        with mock.patch.object(server, "op_search_arxiv", return_value={"total": 0, "candidates": []}) as op_search:
+        with mock.patch.object(
+            server, "op_search_arxiv", return_value={"total": 0, "candidates": []}
+        ) as op_search:
             result = server.zotero_search_arxiv("needle", limit=4)
         op_search.assert_called_once_with("needle", limit=4)
         self.assertEqual(result, {"total": 0, "candidates": []})
 
         expected_import = {"status": "added", "item_key": "NEW12345"}
-        with mock.patch.object(server, "op_import_identifier", return_value=expected_import) as op_import:
+        with mock.patch.object(
+            server, "op_import_identifier", return_value=expected_import
+        ) as op_import:
             result = server.zotero_import_by_identifier(
                 "10.1234/example",
                 collection="Inbox",
@@ -575,14 +656,22 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result, expected_import)
 
         expected_sidecars = {"status": "updated", "item_key": "ABC12345"}
-        with mock.patch.object(server, "op_attach_arxiv_sidecars", return_value=expected_sidecars) as op_sidecars:
-            result = server.zotero_attach_arxiv_sidecars("ABC12345", "2401.01234", attach_html=False)
+        with mock.patch.object(
+            server, "op_attach_arxiv_sidecars", return_value=expected_sidecars
+        ) as op_sidecars:
+            result = server.zotero_attach_arxiv_sidecars(
+                "ABC12345", "2401.01234", attach_html=False
+            )
         op_sidecars.assert_called_once_with("ABC12345", "2401.01234", attach_html=False)
         self.assertEqual(result, expected_sidecars)
 
         expected_capture = {"status": "needs_selection", "candidates": []}
-        with mock.patch.object(server, "op_capture_arxiv", return_value=expected_capture) as op_capture:
-            result = server.zotero_capture_arxiv("needle", collection="Inbox", attach_html=False)
+        with mock.patch.object(
+            server, "op_capture_arxiv", return_value=expected_capture
+        ) as op_capture:
+            result = server.zotero_capture_arxiv(
+                "needle", collection="Inbox", attach_html=False
+            )
         op_capture.assert_called_once_with(
             "needle",
             confirmed_arxiv_id=None,
@@ -592,38 +681,7 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         )
         self.assertEqual(result, expected_capture)
 
-    def test_add_identifier_cleans_translated_item_and_posts_json(self):
-        translated = {
-            "itemType": "journalArticle",
-            "title": "Translated paper",
-            "key": "OLDKEY12",
-            "version": 9,
-            "relations": {},
-            "tags": [{"tag": "existing"}],
-        }
-        response = {"successful": {"0": {"key": "NEW12345", "data": {"title": "Translated paper"}}}}
-
-        with (
-            mock.patch.object(identifiers, "get_api_config", return_value=("api-key", "/users/1")),
-            mock.patch.object(identifiers, "_translate_identifier", return_value=[translated]),
-            mock.patch.object(identifiers, "_check_duplicate_by_metadata", return_value=None),
-            mock.patch.object(identifiers, "api_request", return_value=(json.dumps(response), {})) as api_request,
-        ):
-            result = identifiers.op_add_identifier(
-                "10.1234/example",
-                collection="COLL1234",
-                tags="reading, priority",
-            )
-
-        posted_items = api_request.call_args.kwargs["data"]
-        self.assertEqual(result["status"], "added")
-        self.assertEqual(result["successful"], [{"key": "NEW12345", "title": "Translated paper"}])
-        self.assertEqual(posted_items[0]["collections"], ["COLL1234"])
-        self.assertEqual(posted_items[0]["tags"], [{"tag": "existing"}, {"tag": "reading"}, {"tag": "priority"}])
-        for removed_field in ("key", "version", "relations"):
-            self.assertNotIn(removed_field, posted_items[0])
-
-    def test_import_identifier_creates_local_item_without_web_api_key(self):
+    def test_import_identifier_creates_local_item(self):
         translated = {
             "itemType": "journalArticle",
             "title": "Translated paper",
@@ -637,13 +695,22 @@ class ZoteroServerOperationsTest(unittest.TestCase):
 
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
-            mock.patch.object(operations, "db_find_item_by_identifier", return_value=[]),
-            mock.patch.object(operations, "create_item", return_value="NEW12345") as create_item,
-            mock.patch.object(operations, "db_add_item_to_collection", return_value={"collectionKey": "COLL1234"}),
+            mock.patch.object(
+                operations, "_translate_identifier", return_value=[translated]
+            ),
+            mock.patch.object(
+                operations, "db_find_item_by_identifier", return_value=[]
+            ),
+            mock.patch.object(
+                operations, "create_item", return_value="NEW12345"
+            ) as create_item,
+            mock.patch.object(
+                operations,
+                "db_add_item_to_collection",
+                return_value={"collectionKey": "COLL1234"},
+            ),
             mock.patch.object(operations, "db_get_children", return_value=[]),
             mock.patch.object(operations, "_find_pdf_source", return_value=None),
-            mock.patch.object(operations, "get_api_config") as get_api_config,
         ):
             result = operations.op_import_identifier(
                 "10.1234/example",
@@ -651,23 +718,33 @@ class ZoteroServerOperationsTest(unittest.TestCase):
                 tags="reading, priority",
             )
 
-        get_api_config.assert_not_called()
         payload = create_item.call_args.args[0]
         self.assertEqual(result["status"], "added")
         self.assertEqual(result["item_key"], "NEW12345")
         self.assertEqual(result["pdfStatus"], "needs_user_file")
-        self.assertEqual(payload["tags"], [{"tag": "existing"}, {"tag": "reading"}, {"tag": "priority"}])
+        self.assertEqual(
+            payload["tags"],
+            [{"tag": "existing"}, {"tag": "reading"}, {"tag": "priority"}],
+        )
         for removed_field in ("key", "version", "relations", "attachments"):
             self.assertNotIn(removed_field, payload)
 
     def test_import_identifier_reuses_existing_and_skips_create(self):
-        translated = {"itemType": "journalArticle", "title": "Known paper", "DOI": "10.1234/example"}
+        translated = {
+            "itemType": "journalArticle",
+            "title": "Known paper",
+            "DOI": "10.1234/example",
+        }
         existing = [{"key": "ABC12345", "title": "Known paper", "match": {"doi": True}}]
 
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
-            mock.patch.object(operations, "db_find_item_by_identifier", return_value=existing),
+            mock.patch.object(
+                operations, "_translate_identifier", return_value=[translated]
+            ),
+            mock.patch.object(
+                operations, "db_find_item_by_identifier", return_value=existing
+            ),
             mock.patch.object(operations, "create_item") as create_item,
             mock.patch.object(operations, "db_get_children", return_value=[]),
             mock.patch.object(operations, "_find_pdf_source", return_value=None),
@@ -680,21 +757,37 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result["pdfStatus"], "needs_user_file")
 
     def test_import_identifier_attaches_open_pdf_locally(self):
-        translated = {"itemType": "journalArticle", "title": "OA paper", "DOI": "10.1234/oa"}
+        translated = {
+            "itemType": "journalArticle",
+            "title": "OA paper",
+            "DOI": "10.1234/oa",
+        }
 
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
-            mock.patch.object(operations, "db_find_item_by_identifier", return_value=[]),
+            mock.patch.object(
+                operations, "_translate_identifier", return_value=[translated]
+            ),
+            mock.patch.object(
+                operations, "db_find_item_by_identifier", return_value=[]
+            ),
             mock.patch.object(operations, "create_item", return_value="NEW12345"),
             mock.patch.object(operations, "db_get_children", return_value=[]),
             mock.patch.object(
                 operations,
                 "_find_pdf_source",
-                return_value=("https://example.com/paper.pdf", "https://example.com/source", "unpaywall"),
+                return_value=(
+                    "https://example.com/paper.pdf",
+                    "https://example.com/source",
+                    "unpaywall",
+                ),
             ),
-            mock.patch.object(operations, "_download_pdf", return_value=True) as download_pdf,
-            mock.patch.object(operations, "attach_pdf_from_file", return_value="ATT12345") as attach_pdf,
+            mock.patch.object(
+                operations, "_download_pdf", return_value=True
+            ) as download_pdf,
+            mock.patch.object(
+                operations, "attach_pdf_from_file", return_value="ATT12345"
+            ) as attach_pdf,
         ):
             result = operations.op_import_identifier("10.1234/oa")
 
@@ -704,40 +797,64 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         self.assertEqual(result["pdfAttachmentKey"], "ATT12345")
 
     def test_import_identifier_keeps_item_key_when_pdf_attach_fails(self):
-        translated = {"itemType": "journalArticle", "title": "OA paper", "DOI": "10.1234/oa"}
+        translated = {
+            "itemType": "journalArticle",
+            "title": "OA paper",
+            "DOI": "10.1234/oa",
+        }
 
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "_translate_identifier", return_value=[translated]),
-            mock.patch.object(operations, "db_find_item_by_identifier", return_value=[]),
+            mock.patch.object(
+                operations, "_translate_identifier", return_value=[translated]
+            ),
+            mock.patch.object(
+                operations, "db_find_item_by_identifier", return_value=[]
+            ),
             mock.patch.object(operations, "create_item", return_value="NEW12345"),
             mock.patch.object(operations, "db_get_children", return_value=[]),
             mock.patch.object(
                 operations,
                 "_find_pdf_source",
-                return_value=("https://example.com/paper.pdf", "https://example.com/source", "unpaywall"),
+                return_value=(
+                    "https://example.com/paper.pdf",
+                    "https://example.com/source",
+                    "unpaywall",
+                ),
             ),
             mock.patch.object(operations, "_download_pdf", return_value=True),
-            mock.patch.object(operations, "attach_pdf_from_file", side_effect=RuntimeError("bridge failed")),
+            mock.patch.object(
+                operations,
+                "attach_pdf_from_file",
+                side_effect=RuntimeError("attach failed"),
+            ),
         ):
             result = operations.op_import_identifier("10.1234/oa")
 
         self.assertEqual(result["status"], "added")
         self.assertEqual(result["item_key"], "NEW12345")
         self.assertEqual(result["pdfStatus"], "attach_failed")
-        self.assertIn("bridge failed", result["warnings"][0])
+        self.assertIn("attach failed", result["warnings"][0])
 
     def test_attach_arxiv_sidecars_targets_known_item(self):
         sidecars = {"pdfAttachmentKey": "PDF12345", "warnings": []}
         with (
             mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "db_get_item", return_value={"key": "ABC12345"}),
+            mock.patch.object(
+                operations, "db_get_item", return_value={"key": "ABC12345"}
+            ),
             mock.patch.object(operations, "db_get_children", return_value=[]),
-            mock.patch.object(operations, "attach_arxiv_sidecars", return_value=sidecars) as attach_sidecars,
+            mock.patch.object(
+                operations, "attach_arxiv_sidecars", return_value=sidecars
+            ) as attach_sidecars,
         ):
-            result = operations.op_attach_arxiv_sidecars("ABC12345", "https://arxiv.org/abs/2401.01234v2")
+            result = operations.op_attach_arxiv_sidecars(
+                "ABC12345", "https://arxiv.org/abs/2401.01234v2"
+            )
 
-        attach_sidecars.assert_called_once_with("ABC12345", "2401.01234v2", attach_html=True, children=[])
+        attach_sidecars.assert_called_once_with(
+            "ABC12345", "2401.01234v2", attach_html=True, children=[]
+        )
         self.assertEqual(result["status"], "updated")
         self.assertEqual(result["arxivId"], "2401.01234v2")
         self.assertEqual(result["pdfAttachmentKey"], "PDF12345")
@@ -751,34 +868,6 @@ class ZoteroServerOperationsTest(unittest.TestCase):
                 operations.op_attach_arxiv_sidecars("ABC12345", "not-an-arxiv-id")
 
         db_get_item.assert_not_called()
-
-    def test_batch_add_reports_added_duplicate_and_failed(self):
-        ids_file = ROOT / "tests" / "identifiers.txt"
-        ids_file.write_text("# skip me\n10.1/one\n\n10.2/two\n10.3/three\n", encoding="utf-8")
-        try:
-            with (
-                mock.patch.object(identifiers, "get_api_config", return_value=("api-key", "/users/1")),
-                mock.patch.object(
-                    identifiers,
-                    "op_add_identifier",
-                    side_effect=[
-                        {"status": "added", "identifier": "10.1/one"},
-                        {"status": "duplicate", "identifier": "10.2/two"},
-                        RuntimeError("bad identifier"),
-                    ],
-                ) as add_identifier,
-                mock.patch.object(identifiers.time, "sleep") as sleep,
-            ):
-                result = identifiers.op_batch_add(str(ids_file), tags="todo", sleep_seconds=0)
-        finally:
-            ids_file.unlink(missing_ok=True)
-
-        self.assertEqual(result["total"], 3)
-        self.assertEqual(result["added"], 1)
-        self.assertEqual(result["skipped"], 1)
-        self.assertEqual(result["failed"], 1)
-        self.assertEqual(add_identifier.call_count, 3)
-        sleep.assert_not_called()
 
     def test_crossref_matches_library_citations_without_network(self):
         citation_file = ROOT / "tests" / "citations.txt"
@@ -794,17 +883,29 @@ class ZoteroServerOperationsTest(unittest.TestCase):
                 }
             }
         ]
+        client = mock.Mock()
+        client.library_prefix = "/users/0"
+        client.get_all_json.return_value = items
         try:
-            with (
-                mock.patch.object(doi_ops, "get_api_config", return_value=("api-key", "/users/1")),
-                mock.patch.object(doi_ops, "paginate_all", return_value=items),
-            ):
+            with mock.patch.object(doi_ops, "get_local_client", return_value=client):
                 result = doi_ops.op_crossref(str(citation_file))
         finally:
             citation_file.unlink(missing_ok=True)
 
+        client.probe.assert_called_once_with()
+        client.get_all_json.assert_called_once_with("/users/0/items/top")
         self.assertEqual(result["total"], 2)
-        self.assertEqual(result["found"], [{"author": "Smith", "year": "2020", "key": "ABC12345", "title": "Known paper"}])
+        self.assertEqual(
+            result["found"],
+            [
+                {
+                    "author": "Smith",
+                    "year": "2020",
+                    "key": "ABC12345",
+                    "title": "Known paper",
+                }
+            ],
+        )
         self.assertEqual(result["missing"], [{"author": "Doe", "year": "2021"}])
 
     def test_find_dois_can_apply_matched_crossref_result(self):
@@ -825,24 +926,32 @@ class ZoteroServerOperationsTest(unittest.TestCase):
             "issued": {"date-parts": [[2020]]},
             "author": [{"family": "Smith"}],
         }
+        client = mock.Mock()
+        client.library_prefix = "/users/0"
+        client.get_all_json.return_value = [
+            item,
+            {
+                "data": {
+                    "key": "HASDOI12",
+                    "itemType": "journalArticle",
+                    "DOI": "10.1/old",
+                }
+            },
+            {"data": {"key": "NOTE1234", "itemType": "note"}},
+        ]
 
         with (
-            mock.patch.object(doi_ops, "get_api_config", return_value=("api-key", "/users/1")),
-            mock.patch.object(
-                doi_ops,
-                "paginate_all",
-                return_value=[
-                    item,
-                    {"data": {"key": "HASDOI12", "itemType": "journalArticle", "DOI": "10.1/old"}},
-                    {"data": {"key": "NOTE1234", "itemType": "note"}},
-                ],
-            ),
+            mock.patch.object(doi_ops, "get_local_client", return_value=client),
             mock.patch.object(doi_ops, "_crossref_search", return_value=[work]),
-            mock.patch.object(doi_ops, "_patch_item_field", return_value=204) as patch_field,
+            mock.patch.object(
+                doi_ops, "_patch_item_field", return_value=None
+            ) as patch_field,
         ):
             result = doi_ops.op_find_dois(apply=True, sleep_seconds=0)
 
-        patch_field.assert_called_once_with("api-key", "/users/1", "ABC12345", "DOI", "10.1234/example", 7)
+        client.probe.assert_called_once_with()
+        client.get_all_json.assert_called_once_with("/users/0/items/top")
+        patch_field.assert_called_once_with("ABC12345", "DOI", "10.1234/example", 7)
         self.assertEqual(result["processed"], 1)
         self.assertEqual(result["matched"], 1)
         self.assertEqual(result["written"], 1)
@@ -852,26 +961,150 @@ class ZoteroServerOperationsTest(unittest.TestCase):
     def test_export_paginates_and_returns_text_without_writing(self):
         captured = []
 
-        def fake_api_request(path, api_key, params=None):
-            captured.append((path, api_key, dict(params or {})))
+        def fake_request(path, params=None):
+            captured.append((path, dict(params or {})))
             if len(captured) == 1:
-                return ("chunk-one", {"Total-Results": "150"})
-            return ("chunk-two", {"Total-Results": "150"})
+                return (b"chunk-one", {"Total-Results": "150"}, 200)
+            return (b"chunk-two", {"Total-Results": "150"}, 200)
 
-        with (
-            mock.patch.object(web_items, "get_api_config", return_value=("api-key", "/users/1")),
-            mock.patch.object(web_items, "api_request", side_effect=fake_api_request),
-        ):
-            result = web_items.op_export(format="bibtex", collection="COLL1234")
+        client = mock.Mock()
+        client.library_prefix = "/users/0"
+        client.request.side_effect = fake_request
+        with mock.patch.object(library_ops, "get_local_client", return_value=client):
+            result = library_ops.op_export(format="bibtex", collection="COLL1234")
 
-        self.assertEqual(result, {"format": "bibtex", "collection": "COLL1234", "bytes": 19, "text": "chunk-one\nchunk-two"})
+        self.assertEqual(
+            result,
+            {
+                "format": "bibtex",
+                "collection": "COLL1234",
+                "bytes": 19,
+                "text": "chunk-one\nchunk-two",
+            },
+        )
         self.assertEqual(
             captured,
             [
-                ("/users/1/collections/COLL1234/items", "api-key", {"format": "bibtex", "limit": "100", "start": "0"}),
-                ("/users/1/collections/COLL1234/items", "api-key", {"format": "bibtex", "limit": "100", "start": "100"}),
+                (
+                    "/users/0/collections/COLL1234/items",
+                    {"format": "bibtex", "limit": "100", "start": "0"},
+                ),
+                (
+                    "/users/0/collections/COLL1234/items",
+                    {"format": "bibtex", "limit": "100", "start": "100"},
+                ),
             ],
         )
+
+    def test_update_item_uses_local_version_precondition(self):
+        client = mock.Mock()
+        client.library_prefix = "/users/0"
+        client.get_json.return_value = (
+            {
+                "version": 7,
+                "data": {
+                    "tags": [{"tag": "old"}],
+                    "collections": [],
+                },
+            },
+            {},
+        )
+
+        with mock.patch.object(library_ops, "get_local_client", return_value=client):
+            result = library_ops.op_update_item(
+                "ABC12345",
+                title="New title",
+                add_tags="new",
+                remove_tags="old",
+                add_collection="COLL1234",
+            )
+
+        client.request.assert_called_once_with(
+            "/users/0/items/ABC12345",
+            method="PATCH",
+            data={
+                "title": "New title",
+                "tags": [{"tag": "new"}],
+                "collections": ["COLL1234"],
+            },
+            content_type="application/json",
+            headers={"If-Unmodified-Since-Version": "7"},
+        )
+        self.assertEqual(result["status"], "updated")
+
+    def test_check_pdfs_reads_only_local_library(self):
+        client = mock.Mock()
+        client.library_prefix = "/users/0"
+        client.get_all_json.return_value = [
+            {
+                "data": {
+                    "key": "PARENT01",
+                    "itemType": "journalArticle",
+                    "title": "Has PDF",
+                }
+            },
+            {
+                "data": {
+                    "key": "PARENT02",
+                    "itemType": "book",
+                    "title": "Missing PDF",
+                }
+            },
+            {
+                "data": {
+                    "key": "PDF00001",
+                    "itemType": "attachment",
+                    "parentItem": "PARENT01",
+                    "contentType": "application/pdf",
+                }
+            },
+        ]
+
+        with mock.patch.object(library_ops, "get_local_client", return_value=client):
+            result = library_ops.op_check_pdfs()
+
+        client.get_all_json.assert_called_once_with("/users/0/items")
+        self.assertEqual(result["total"], 2)
+        self.assertEqual(result["with_pdf"], 1)
+        self.assertEqual(result["without_pdf"], 1)
+        self.assertEqual(
+            result["missing"], [{"key": "PARENT02", "title": "Missing PDF"}]
+        )
+
+    def test_csl_json_export_combines_pages(self):
+        client = mock.Mock()
+        client.library_prefix = "/users/0"
+        client.request.side_effect = [
+            (b'[{"id":"one"}]', {"Total-Results": "101"}, 200),
+            (b'[{"id":"two"}]', {"Total-Results": "101"}, 200),
+        ]
+
+        with mock.patch.object(library_ops, "get_local_client", return_value=client):
+            result = library_ops.op_export(format="csljson")
+
+        self.assertIn('"id": "one"', result["text"])
+        self.assertIn('"id": "two"', result["text"])
+        self.assertEqual(client.request.call_count, 2)
+
+    def test_retired_backends_are_absent(self):
+        retired_names = [
+            "ZOTERO_" + "BACKEND",
+            "ZOTERO_" + "API_KEY",
+            "ZOTERO_" + "USER_ID",
+            "ZOTERO_" + "GROUP_ID",
+        ]
+        checked_files = [
+            ROOT / ".env.example",
+            ROOT / "README.md",
+            ROOT / "docs" / "CODEX_INTEGRATION.md",
+            ROOT / "plugins" / "zotero-mcp" / ".mcp.json",
+            ROOT / "plugins" / "zotero-mcp" / "claude.mcp.json",
+        ]
+        combined = "\n".join(path.read_text(encoding="utf-8") for path in checked_files)
+        for retired_name in retired_names:
+            self.assertNotIn(retired_name, combined)
+        self.assertFalse((ROOT / "zotero_mcp" / ("web_" + "api.py")).exists())
+        self.assertFalse((ROOT / "zotero_mcp" / ("web_" + "items.py")).exists())
 
 
 if __name__ == "__main__":
