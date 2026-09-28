@@ -9,9 +9,9 @@ import urllib.parse
 import urllib.request
 
 from zotero_mcp.config import CROSSREF_EMAIL, DOI_EXCLUDED_ITEM_TYPES
-from zotero_mcp.library_ops import _patch_item_field
+from zotero_mcp.library_ops import patch_item_field
 from zotero_mcp.local_api import get_local_client
-from zotero_mcp.metadata import _extract_year, _first_author_last, _title_similarity
+from zotero_mcp.metadata import extract_year, first_author_last, title_similarity
 
 
 def _crossref_search(title, first_author):
@@ -32,7 +32,7 @@ def _crossref_search(title, first_author):
 
 def _match_crossref_result(work, zotero_title, zotero_year, zotero_first_author):
     cr_title = " ".join(work.get("title", [""]))
-    sim = _title_similarity(zotero_title, cr_title)
+    sim = title_similarity(zotero_title, cr_title)
     if sim < 0.85:
         return None
 
@@ -96,7 +96,7 @@ def op_crossref(file):
     lib_index = {}
     for item in items:
         data = item["data"]
-        year = _extract_year(data.get("date", "")) or ""
+        year = extract_year(data.get("date", "")) or ""
         for creator in data.get("creators", []):
             last = creator.get("lastName", creator.get("name", ""))
             if last and year:
@@ -165,8 +165,8 @@ def op_find_dois(apply=False, limit=None, collection=None, sleep_seconds=1):
     for item in candidates:
         data = item["data"]
         title = data.get("title", "")
-        year = _extract_year(data.get("date", ""))
-        first_author = _first_author_last(data)
+        year = extract_year(data.get("date", ""))
+        first_author = first_author_last(data)
         key = data.get("key", "?")
         entry = {"key": key, "title": title, "year": year, "firstAuthor": first_author}
         if not title:
@@ -197,7 +197,7 @@ def op_find_dois(apply=False, limit=None, collection=None, sleep_seconds=1):
         if apply:
             try:
                 version = item.get("version", item.get("data", {}).get("version", 0))
-                _patch_item_field(key, "DOI", doi, version)
+                patch_item_field(key, "DOI", doi, version)
                 written += 1
                 entry["written"] = True
             except Exception as e:

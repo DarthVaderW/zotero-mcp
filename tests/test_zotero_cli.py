@@ -25,7 +25,7 @@ def load_module(module_name):
 class ZoteroCLITest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.mod = load_module("zotero_mcp.operations")
+        cls.mod = load_module("zotero_mcp.intake_ops")
         cls.local_library = load_module("zotero_mcp.local_library")
         cls.validators = load_module("zotero_mcp.validators")
         cls.cli = load_module("zotero_mcp.cli")
@@ -148,13 +148,13 @@ class ZoteroCLITest(unittest.TestCase):
         self.assertIn("No readable attachment text found.", stderr.getvalue())
 
     def test_arxiv_id_extract(self):
-        self.assertEqual(self.mod._extract_arxiv_id("2401.01234"), "2401.01234")
+        self.assertEqual(self.mod.extract_arxiv_id("2401.01234"), "2401.01234")
         self.assertEqual(
-            self.mod._extract_arxiv_id("https://arxiv.org/abs/2401.01234v2"),
+            self.mod.extract_arxiv_id("https://arxiv.org/abs/2401.01234v2"),
             "2401.01234v2",
         )
         self.assertEqual(
-            self.mod._extract_arxiv_id("https://arxiv.org/html/2401.01234v2"),
+            self.mod.extract_arxiv_id("https://arxiv.org/html/2401.01234v2"),
             "2401.01234v2",
         )
 

@@ -29,14 +29,14 @@ def fmt_item_short(item):
     return f"[{key}] {creators} ({year}) {title} [{itype}]"
 
 
-def _extract_year(date_str):
+def extract_year(date_str):
     if not date_str:
         return None
     m = re.match(r"(\d{4})", str(date_str))
     return m.group(1) if m else None
 
 
-def _first_author_last(item_data):
+def first_author_last(item_data):
     creators = item_data.get("creators", [])
     if not creators:
         return None
@@ -52,5 +52,5 @@ def _normalize_text(text):
     return text
 
 
-def _title_similarity(a, b):
+def title_similarity(a, b):
     return difflib.SequenceMatcher(None, _normalize_text(a), _normalize_text(b)).ratio()

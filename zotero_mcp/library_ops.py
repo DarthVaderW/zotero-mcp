@@ -17,7 +17,7 @@ def _header(headers: dict[str, str], name: str, default: str = "") -> str:
     return default
 
 
-def _patch_item_field(item_key: str, field: str, value, version: int | str) -> None:
+def patch_item_field(item_key: str, field: str, value, version: int | str) -> None:
     """Patch one field using the caller's already-read object version."""
     require_item_key(item_key)
     client = get_local_client()

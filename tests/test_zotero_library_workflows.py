@@ -92,7 +92,7 @@ class ZoteroLibraryTest(unittest.TestCase):
             mock.patch.object(doi_ops, "get_local_client", return_value=client),
             mock.patch.object(doi_ops, "_crossref_search", return_value=[work]),
             mock.patch.object(
-                doi_ops, "_patch_item_field", return_value=None
+                doi_ops, "patch_item_field", return_value=None
             ) as patch_field,
         ):
             result = doi_ops.op_find_dois(apply=True, sleep_seconds=0)

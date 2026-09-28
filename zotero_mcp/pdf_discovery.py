@@ -54,7 +54,7 @@ def _try_doi_content_negotiation(doi):
         return None
 
 
-def _find_pdf_source(doi, sources):
+def find_pdf_source(doi, sources):
     source_functions = {
         "unpaywall": (_try_unpaywall, 1),
         "semanticscholar": (_try_semantic_scholar, 1),

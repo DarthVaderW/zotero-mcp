@@ -63,7 +63,7 @@ def _identifier_lookup_url(identifier, id_type):
     raise RuntimeError(f"Unknown identifier type: {id_type}")
 
 
-def _translate_identifier(identifier, id_type):
+def translate_identifier(identifier, id_type):
     lookup_url = _identifier_lookup_url(identifier, id_type)
     translate_data = json.dumps({"url": lookup_url, "sessionid": "zotero-mcp"}).encode(
         "utf-8"

@@ -12,7 +12,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zotero_mcp import operations
+from zotero_mcp import intake_ops
 
 
 class ZoteroIdentifierTest(unittest.TestCase):
@@ -29,25 +29,25 @@ class ZoteroIdentifierTest(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(operations, "ensure_local_api", return_value=None),
+            mock.patch.object(intake_ops, "ensure_local_api", return_value=None),
             mock.patch.object(
-                operations, "_translate_identifier", return_value=[translated]
+                intake_ops, "translate_identifier", return_value=[translated]
             ),
             mock.patch.object(
-                operations, "db_find_item_by_identifier", return_value=[]
+                intake_ops, "db_find_item_by_identifier", return_value=[]
             ),
             mock.patch.object(
-                operations, "create_item", return_value="NEW12345"
+                intake_ops, "create_item", return_value="NEW12345"
             ) as create_item,
             mock.patch.object(
-                operations,
+                intake_ops,
                 "db_add_item_to_collection",
                 return_value={"collectionKey": "COLL1234"},
             ),
-            mock.patch.object(operations, "db_get_children", return_value=[]),
-            mock.patch.object(operations, "_find_pdf_source", return_value=None),
+            mock.patch.object(intake_ops, "db_get_children", return_value=[]),
+            mock.patch.object(intake_ops, "find_pdf_source", return_value=None),
         ):
-            result = operations.op_import_identifier(
+            result = intake_ops.op_import_identifier(
                 "10.1234/example",
                 collection="COLL1234",
                 tags="reading, priority",
@@ -74,18 +74,18 @@ class ZoteroIdentifierTest(unittest.TestCase):
         existing = [{"key": "ABC12345", "title": "Known paper", "match": {"doi": True}}]
 
         with (
-            mock.patch.object(operations, "ensure_local_api", return_value=None),
+            mock.patch.object(intake_ops, "ensure_local_api", return_value=None),
             mock.patch.object(
-                operations, "_translate_identifier", return_value=[translated]
+                intake_ops, "translate_identifier", return_value=[translated]
             ),
             mock.patch.object(
-                operations, "db_find_item_by_identifier", return_value=existing
+                intake_ops, "db_find_item_by_identifier", return_value=existing
             ),
-            mock.patch.object(operations, "create_item") as create_item,
-            mock.patch.object(operations, "db_get_children", return_value=[]),
-            mock.patch.object(operations, "_find_pdf_source", return_value=None),
+            mock.patch.object(intake_ops, "create_item") as create_item,
+            mock.patch.object(intake_ops, "db_get_children", return_value=[]),
+            mock.patch.object(intake_ops, "find_pdf_source", return_value=None),
         ):
-            result = operations.op_import_identifier("10.1234/example")
+            result = intake_ops.op_import_identifier("10.1234/example")
 
         create_item.assert_not_called()
         self.assertEqual(result["status"], "existing")
@@ -101,18 +101,18 @@ class ZoteroIdentifierTest(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(operations, "ensure_local_api", return_value=None),
+            mock.patch.object(intake_ops, "ensure_local_api", return_value=None),
             mock.patch.object(
-                operations, "_translate_identifier", return_value=[translated]
+                intake_ops, "translate_identifier", return_value=[translated]
             ),
             mock.patch.object(
-                operations, "db_find_item_by_identifier", return_value=[]
+                intake_ops, "db_find_item_by_identifier", return_value=[]
             ),
-            mock.patch.object(operations, "create_item", return_value="NEW12345"),
-            mock.patch.object(operations, "db_get_children", return_value=[]),
+            mock.patch.object(intake_ops, "create_item", return_value="NEW12345"),
+            mock.patch.object(intake_ops, "db_get_children", return_value=[]),
             mock.patch.object(
-                operations,
-                "_find_pdf_source",
+                intake_ops,
+                "find_pdf_source",
                 return_value=(
                     "https://example.com/paper.pdf",
                     "https://example.com/source",
@@ -120,13 +120,13 @@ class ZoteroIdentifierTest(unittest.TestCase):
                 ),
             ),
             mock.patch.object(
-                operations, "_download_pdf", return_value=True
+                intake_ops, "download_pdf", return_value=True
             ) as download_pdf,
             mock.patch.object(
-                operations, "attach_pdf_from_file", return_value="ATT12345"
+                intake_ops, "attach_pdf_from_file", return_value="ATT12345"
             ) as attach_pdf,
         ):
-            result = operations.op_import_identifier("10.1234/oa")
+            result = intake_ops.op_import_identifier("10.1234/oa")
 
         download_pdf.assert_called_once()
         attach_pdf.assert_called_once()
@@ -142,32 +142,32 @@ class ZoteroIdentifierTest(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(operations, "ensure_local_api", return_value=None),
+            mock.patch.object(intake_ops, "ensure_local_api", return_value=None),
             mock.patch.object(
-                operations, "_translate_identifier", return_value=[translated]
+                intake_ops, "translate_identifier", return_value=[translated]
             ),
             mock.patch.object(
-                operations, "db_find_item_by_identifier", return_value=[]
+                intake_ops, "db_find_item_by_identifier", return_value=[]
             ),
-            mock.patch.object(operations, "create_item", return_value="NEW12345"),
-            mock.patch.object(operations, "db_get_children", return_value=[]),
+            mock.patch.object(intake_ops, "create_item", return_value="NEW12345"),
+            mock.patch.object(intake_ops, "db_get_children", return_value=[]),
             mock.patch.object(
-                operations,
-                "_find_pdf_source",
+                intake_ops,
+                "find_pdf_source",
                 return_value=(
                     "https://example.com/paper.pdf",
                     "https://example.com/source",
                     "unpaywall",
                 ),
             ),
-            mock.patch.object(operations, "_download_pdf", return_value=True),
+            mock.patch.object(intake_ops, "download_pdf", return_value=True),
             mock.patch.object(
-                operations,
+                intake_ops,
                 "attach_pdf_from_file",
                 side_effect=RuntimeError("attach failed"),
             ),
         ):
-            result = operations.op_import_identifier("10.1234/oa")
+            result = intake_ops.op_import_identifier("10.1234/oa")
 
         self.assertEqual(result["status"], "added")
         self.assertEqual(result["item_key"], "NEW12345")

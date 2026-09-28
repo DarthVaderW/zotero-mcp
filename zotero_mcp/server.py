@@ -13,7 +13,7 @@ from zotero_mcp.basic_ops import (
     op_collections, op_create_item, op_delete_items, op_get, op_items,
     op_ping, op_search, op_tags,
 )
-from zotero_mcp.operations import (
+from zotero_mcp.intake_ops import (
     op_attach_arxiv_sidecars, op_capture_arxiv, op_import_identifier,
     op_search_arxiv,
 )

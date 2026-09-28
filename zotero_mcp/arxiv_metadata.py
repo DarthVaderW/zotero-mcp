@@ -38,7 +38,7 @@ def _read_url(req, timeout=30, retries=1):
     raise RuntimeError(f"arXiv network error: {last_error}") from last_error
 
 
-def _extract_arxiv_id(arxiv_id_or_url):
+def extract_arxiv_id(arxiv_id_or_url):
     s = arxiv_id_or_url.strip()
     m = re.search(r"arxiv\.org/(abs|pdf|html)/([0-9]{4}\.[0-9]{4,5}(v\d+)?)", s, re.I)
     if m:
@@ -67,9 +67,9 @@ def _creator_display_names(creators):
 
 def _title_score(query, title):
     try:
-        from zotero_mcp.metadata import _title_similarity
+        from zotero_mcp.metadata import title_similarity
 
-        return round(float(_title_similarity(query, title)), 4)
+        return round(float(title_similarity(query, title)), 4)
     except Exception:
         return 0.0
 
@@ -150,7 +150,7 @@ def search_arxiv(query, limit=5):
     limit = max(1, min(int(limit or 5), 25))
 
     try:
-        arxiv_id = _extract_arxiv_id(query)
+        arxiv_id = extract_arxiv_id(query)
     except ValueError:
         arxiv_id = None
 
@@ -158,7 +158,7 @@ def search_arxiv(query, limit=5):
         return {
             "query": query,
             "total": 1,
-            "candidates": [_metadata_to_candidate(_fetch_arxiv_metadata(arxiv_id), query=query)],
+            "candidates": [_metadata_to_candidate(fetch_arxiv_metadata(arxiv_id), query=query)],
         }
 
     params = {
@@ -182,7 +182,7 @@ def search_arxiv(query, limit=5):
     return {"query": query, "total": len(candidates), "candidates": candidates[:limit]}
 
 
-def _fetch_arxiv_metadata_from_abs_page(arxiv_id):
+def fetch_arxiv_metadata_from_abs_page(arxiv_id):
     url = f"https://arxiv.org/abs/{arxiv_id}"
     req = urllib.request.Request(url, headers={"User-Agent": _mcp_user_agent()})
     html_text = _read_url(req, timeout=30, retries=2).decode("utf-8", errors="replace")
@@ -227,19 +227,19 @@ def _fetch_arxiv_metadata_from_abs_page(arxiv_id):
     }
 
 
-def _fetch_arxiv_metadata(arxiv_id):
+def fetch_arxiv_metadata(arxiv_id):
     url = "https://export.arxiv.org/api/query?" + urllib.parse.urlencode({"id_list": arxiv_id})
     req = urllib.request.Request(url, headers={"Accept": "application/atom+xml", "User-Agent": _mcp_user_agent()})
     try:
         xml_text = _read_url(req, timeout=30, retries=2)
     except Exception:
-        return _fetch_arxiv_metadata_from_abs_page(arxiv_id)
+        return fetch_arxiv_metadata_from_abs_page(arxiv_id)
 
     ns = {"atom": "http://www.w3.org/2005/Atom", "arxiv": "http://arxiv.org/schemas/atom"}
     try:
         root = ET.fromstring(xml_text)
     except ET.ParseError:
-        return _fetch_arxiv_metadata_from_abs_page(arxiv_id)
+        return fetch_arxiv_metadata_from_abs_page(arxiv_id)
     entry = root.find("atom:entry", ns)
     if entry is None:
         raise RuntimeError(f"arXiv metadata not found for {arxiv_id}")
@@ -271,7 +271,7 @@ def _fetch_arxiv_metadata(arxiv_id):
     }
 
 
-def _fetch_arxiv_metadata_via_translator(arxiv_id):
+def fetch_arxiv_metadata_via_translator(arxiv_id):
     abs_url = f"https://arxiv.org/abs/{arxiv_id}"
     payload = json.dumps({"url": abs_url, "sessionid": "zotero-cli"}).encode("utf-8")
     req = urllib.request.Request("https://translate.zotero.org/web", data=payload, headers={"Content-Type": "application/json"}, method="POST")
@@ -314,7 +314,7 @@ def _fetch_arxiv_metadata_via_translator(arxiv_id):
     }
 
 
-def _find_arxiv_html_url(arxiv_id):
+def find_arxiv_html_url(arxiv_id):
     abs_url = f"https://arxiv.org/abs/{arxiv_id}"
     req = urllib.request.Request(abs_url, headers={"User-Agent": _mcp_user_agent()})
     html_text = _read_url(req, timeout=30, retries=2).decode("utf-8", errors="replace")

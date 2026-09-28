@@ -15,7 +15,7 @@ def _pdf_user_agent() -> str:
     return f"Mozilla/5.0 (compatible; ZoteroCLI/1.0{contact})"
 
 
-def _download_pdf(url, dest_path):
+def download_pdf(url, dest_path):
     req = urllib.request.Request(
         url,
         headers={

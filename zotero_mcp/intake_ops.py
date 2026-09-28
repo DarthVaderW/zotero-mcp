@@ -5,17 +5,17 @@ from __future__ import annotations
 import os
 import tempfile
 
-from zotero_mcp.arxiv import _find_existing_pdf_child, attach_arxiv_sidecars, import_arxiv
-from zotero_mcp.arxiv_metadata import _extract_arxiv_id, search_arxiv
+from zotero_mcp.arxiv import find_existing_pdf_child, attach_arxiv_sidecars, import_arxiv
+from zotero_mcp.arxiv_metadata import extract_arxiv_id, search_arxiv
 from zotero_mcp.config import PDF_SOURCES
-from zotero_mcp.identifiers import _translate_identifier, clean_translated_item_for_local
+from zotero_mcp.identifiers import translate_identifier, clean_translated_item_for_local
 from zotero_mcp.local_api import ensure_local_api
 from zotero_mcp.local_library import (
     attach_pdf_from_file, create_item, db_add_item_to_collection,
     db_find_arxiv_item, db_find_item_by_identifier, db_get_children, db_get_item,
 )
-from zotero_mcp.pdf_discovery import _find_pdf_source
-from zotero_mcp.pdfs import _download_pdf
+from zotero_mcp.pdf_discovery import find_pdf_source
+from zotero_mcp.pdfs import download_pdf
 from zotero_mcp.validators import require_item_key, validate_id_type
 
 
@@ -40,7 +40,7 @@ def _local_pdf_result(
     current_children = list(
         children if children is not None else (db_get_children(item_key) or [])
     )
-    pdf_child = _find_existing_pdf_child(current_children)
+    pdf_child = find_existing_pdf_child(current_children)
     if pdf_child:
         key = pdf_child.get("key")
         return {
@@ -59,7 +59,7 @@ def _local_pdf_result(
             "warnings": ["No DOI was available for OA PDF discovery."],
         }
 
-    source_info = _find_pdf_source(doi, source_names)
+    source_info = find_pdf_source(doi, source_names)
     if not source_info:
         return {
             "pdfStatus": "needs_user_file",
@@ -73,7 +73,7 @@ def _local_pdf_result(
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         tmp_path = tmp.name
     try:
-        if not _download_pdf(pdf_url, tmp_path):
+        if not download_pdf(pdf_url, tmp_path):
             return {
                 "pdfStatus": "download_failed",
                 "pdfSource": source_name,
@@ -123,7 +123,7 @@ def op_import_identifier(
 ):
     id_type = validate_id_type(id_type)
     ensure_local_api()
-    translated = _translate_identifier(identifier, id_type)
+    translated = translate_identifier(identifier, id_type)
     if not translated:
         raise RuntimeError("No metadata found for this identifier.")
 
@@ -197,7 +197,7 @@ def op_attach_arxiv_sidecars(key, arxiv, attach_html=True):
     ensure_local_api()
     require_item_key(key)
     try:
-        arxiv_id = _extract_arxiv_id(arxiv)
+        arxiv_id = extract_arxiv_id(arxiv)
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
     item = db_get_item(key)
@@ -268,7 +268,7 @@ def _existing_arxiv_result(arxiv_id, existing, collection=None, attach_html=True
 def op_arxiv(arxiv, collection_name_or_key=None, attach_html=True, force=False):
     ensure_local_api()
     try:
-        arxiv_id = _extract_arxiv_id(arxiv)
+        arxiv_id = extract_arxiv_id(arxiv)
     except ValueError as exc:
         raise RuntimeError(str(exc)) from exc
     if not force:
@@ -305,7 +305,7 @@ def op_capture_arxiv(
             force=force,
         )
     try:
-        arxiv_id = _extract_arxiv_id(paper)
+        arxiv_id = extract_arxiv_id(paper)
     except ValueError:
         arxiv_id = None
     if arxiv_id:

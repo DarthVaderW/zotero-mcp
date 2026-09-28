@@ -12,7 +12,7 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from zotero_mcp import arxiv, arxiv_metadata, operations
+from zotero_mcp import arxiv, arxiv_metadata, intake_ops
 
 
 class ZoteroArxivTest(unittest.TestCase):
@@ -20,7 +20,7 @@ class ZoteroArxivTest(unittest.TestCase):
         page = b'<a href="/html/2401.01234v1">HTML (experimental)</a>'
 
         with mock.patch.object(arxiv_metadata, "_read_url", return_value=page):
-            result = arxiv_metadata._find_arxiv_html_url("2401.01234")
+            result = arxiv_metadata.find_arxiv_html_url("2401.01234")
 
         self.assertEqual(result, "https://arxiv.org/html/2401.01234v1")
 
@@ -34,10 +34,10 @@ class ZoteroArxivTest(unittest.TestCase):
         with (
             mock.patch.object(arxiv_metadata, "_read_url", return_value=b"<not-xml"),
             mock.patch.object(
-                arxiv_metadata, "_fetch_arxiv_metadata_from_abs_page", return_value=fallback
+                arxiv_metadata, "fetch_arxiv_metadata_from_abs_page", return_value=fallback
             ) as from_abs,
         ):
-            result = arxiv_metadata._fetch_arxiv_metadata("2401.01234")
+            result = arxiv_metadata.fetch_arxiv_metadata("2401.01234")
 
         from_abs.assert_called_once_with("2401.01234")
         self.assertEqual(result, fallback)
@@ -66,21 +66,21 @@ class ZoteroArxivTest(unittest.TestCase):
 
         with (
             mock.patch.object(
-                arxiv_metadata, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)
+                arxiv_metadata, "fetch_arxiv_metadata_via_translator", return_value=dict(meta)
             ),
             mock.patch.object(
-                arxiv_metadata, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)
+                arxiv_metadata, "fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)
             ),
             mock.patch.object(
                 arxiv_metadata,
-                "_find_arxiv_html_url",
+                "find_arxiv_html_url",
                 return_value="https://arxiv.org/html/2401.01234v1",
             ),
             mock.patch.object(arxiv, "create_item", return_value="ABC12345"),
             mock.patch.object(
                 arxiv, "db_add_snapshot", side_effect=["SNAP1234", "HTML1234"]
             ) as add_snapshot,
-            mock.patch.object(arxiv, "_download_pdf", return_value=True),
+            mock.patch.object(arxiv, "download_pdf", return_value=True),
             mock.patch.object(arxiv, "attach_pdf_from_file", return_value="ATT12345"),
         ):
             result = arxiv.import_arxiv("2401.01234")
@@ -113,15 +113,15 @@ class ZoteroArxivTest(unittest.TestCase):
 
         with (
             mock.patch.object(
-                arxiv_metadata, "_fetch_arxiv_metadata_via_translator", return_value=dict(meta)
+                arxiv_metadata, "fetch_arxiv_metadata_via_translator", return_value=dict(meta)
             ),
             mock.patch.object(
-                arxiv_metadata, "_fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)
+                arxiv_metadata, "fetch_arxiv_metadata_from_abs_page", return_value=dict(meta)
             ),
-            mock.patch.object(arxiv_metadata, "_find_arxiv_html_url", return_value=None),
+            mock.patch.object(arxiv_metadata, "find_arxiv_html_url", return_value=None),
             mock.patch.object(arxiv, "create_item", return_value="ABC12345"),
             mock.patch.object(arxiv, "db_add_snapshot", return_value="SNAP1234"),
-            mock.patch.object(arxiv, "_download_pdf", return_value=False),
+            mock.patch.object(arxiv, "download_pdf", return_value=False),
             mock.patch.object(arxiv, "attach_pdf_from_file") as attach_pdf,
         ):
             result = arxiv.import_arxiv("2401.01234")
@@ -154,8 +154,8 @@ class ZoteroArxivTest(unittest.TestCase):
         ]
 
         with (
-            mock.patch.object(arxiv, "_download_pdf") as download_pdf,
-            mock.patch.object(arxiv_metadata, "_find_arxiv_html_url") as find_html,
+            mock.patch.object(arxiv, "download_pdf") as download_pdf,
+            mock.patch.object(arxiv_metadata, "find_arxiv_html_url") as find_html,
             mock.patch.object(arxiv, "db_add_snapshot") as add_snapshot,
         ):
             result = arxiv.attach_arxiv_sidecars(
@@ -174,14 +174,14 @@ class ZoteroArxivTest(unittest.TestCase):
     def test_attach_arxiv_sidecars_adds_missing_pdf_and_html(self):
         with (
             mock.patch.object(
-                arxiv, "_download_pdf", return_value=True
+                arxiv, "download_pdf", return_value=True
             ) as download_pdf,
             mock.patch.object(
                 arxiv, "attach_pdf_from_file", return_value="PDF12345"
             ) as attach_pdf,
             mock.patch.object(
                 arxiv_metadata,
-                "_find_arxiv_html_url",
+                "find_arxiv_html_url",
                 return_value="https://arxiv.org/html/2401.01234v1",
             ),
             mock.patch.object(
@@ -224,7 +224,7 @@ class ZoteroArxivTest(unittest.TestCase):
         with (
             mock.patch.object(
                 arxiv_metadata,
-                "_find_arxiv_html_url",
+                "find_arxiv_html_url",
                 return_value="https://arxiv.org/html/2401.01234v1",
             ),
             mock.patch.object(
@@ -262,16 +262,16 @@ class ZoteroArxivTest(unittest.TestCase):
         }
 
         with (
-            mock.patch.object(operations, "ensure_local_api", return_value=None),
+            mock.patch.object(intake_ops, "ensure_local_api", return_value=None),
             mock.patch.object(
-                operations, "db_find_arxiv_item", return_value=existing
+                intake_ops, "db_find_arxiv_item", return_value=existing
             ) as find_item,
             mock.patch.object(
-                operations, "attach_arxiv_sidecars", return_value=sidecars
+                intake_ops, "attach_arxiv_sidecars", return_value=sidecars
             ) as top_up,
-            mock.patch.object(operations, "import_arxiv") as import_item,
+            mock.patch.object(intake_ops, "import_arxiv") as import_item,
         ):
-            result = operations.op_arxiv("2401.01234")
+            result = intake_ops.op_arxiv("2401.01234")
 
         find_item.assert_called_once_with("2401.01234")
         top_up.assert_called_once_with("ABC12345", "2401.01234", attach_html=True)
@@ -287,16 +287,16 @@ class ZoteroArxivTest(unittest.TestCase):
         existing = [{"key": "ABC12345", "title": "Existing"}]
 
         with (
-            mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "db_find_arxiv_item", return_value=existing),
+            mock.patch.object(intake_ops, "ensure_local_api", return_value=None),
+            mock.patch.object(intake_ops, "db_find_arxiv_item", return_value=existing),
             mock.patch.object(
-                operations,
+                intake_ops,
                 "attach_arxiv_sidecars",
                 side_effect=RuntimeError("network down"),
             ),
-            mock.patch.object(operations, "import_arxiv") as import_item,
+            mock.patch.object(intake_ops, "import_arxiv") as import_item,
         ):
-            result = operations.op_arxiv("2401.01234")
+            result = intake_ops.op_arxiv("2401.01234")
 
         import_item.assert_not_called()
         self.assertEqual(result["status"], "existing")
@@ -306,13 +306,13 @@ class ZoteroArxivTest(unittest.TestCase):
 
     def test_op_arxiv_force_skips_duplicate_check(self):
         with (
-            mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "db_find_arxiv_item") as find_item,
+            mock.patch.object(intake_ops, "ensure_local_api", return_value=None),
+            mock.patch.object(intake_ops, "db_find_arxiv_item") as find_item,
             mock.patch.object(
-                operations, "import_arxiv", return_value={"item_key": "NEW12345"}
+                intake_ops, "import_arxiv", return_value={"item_key": "NEW12345"}
             ) as import_item,
         ):
-            result = operations.op_arxiv("2401.01234", force=True)
+            result = intake_ops.op_arxiv("2401.01234", force=True)
 
         find_item.assert_not_called()
         import_item.assert_called_once_with(
@@ -326,7 +326,7 @@ class ZoteroArxivTest(unittest.TestCase):
 
         with (
             mock.patch.object(
-                operations,
+                intake_ops,
                 "search_arxiv",
                 return_value={
                     "query": "Candidate",
@@ -334,9 +334,9 @@ class ZoteroArxivTest(unittest.TestCase):
                     "candidates": candidates,
                 },
             ) as search,
-            mock.patch.object(operations, "import_arxiv") as import_item,
+            mock.patch.object(intake_ops, "import_arxiv") as import_item,
         ):
-            result = operations.op_capture_arxiv("Candidate")
+            result = intake_ops.op_capture_arxiv("Candidate")
 
         search.assert_called_once_with("Candidate", limit=5)
         import_item.assert_not_called()
@@ -346,11 +346,11 @@ class ZoteroArxivTest(unittest.TestCase):
 
     def test_capture_arxiv_confirmed_candidate_writes(self):
         with mock.patch.object(
-            operations,
+            intake_ops,
             "op_arxiv",
             return_value={"status": "added", "item_key": "ABC12345"},
         ) as op_arxiv:
-            result = operations.op_capture_arxiv(
+            result = intake_ops.op_capture_arxiv(
                 "Candidate title",
                 confirmed_arxiv_id="2401.01234",
                 collection="Inbox",
@@ -368,11 +368,11 @@ class ZoteroArxivTest(unittest.TestCase):
 
     def test_capture_arxiv_bare_id_writes(self):
         with mock.patch.object(
-            operations,
+            intake_ops,
             "op_arxiv",
             return_value={"status": "added", "item_key": "ABC12345"},
         ) as op_arxiv:
-            result = operations.op_capture_arxiv(
+            result = intake_ops.op_capture_arxiv(
                 "https://arxiv.org/html/2401.01234v1",
                 collection="Inbox",
                 attach_html=True,
@@ -390,16 +390,16 @@ class ZoteroArxivTest(unittest.TestCase):
     def test_attach_arxiv_sidecars_targets_known_item(self):
         sidecars = {"pdfAttachmentKey": "PDF12345", "warnings": []}
         with (
-            mock.patch.object(operations, "ensure_local_api", return_value=None),
+            mock.patch.object(intake_ops, "ensure_local_api", return_value=None),
             mock.patch.object(
-                operations, "db_get_item", return_value={"key": "ABC12345"}
+                intake_ops, "db_get_item", return_value={"key": "ABC12345"}
             ),
-            mock.patch.object(operations, "db_get_children", return_value=[]),
+            mock.patch.object(intake_ops, "db_get_children", return_value=[]),
             mock.patch.object(
-                operations, "attach_arxiv_sidecars", return_value=sidecars
+                intake_ops, "attach_arxiv_sidecars", return_value=sidecars
             ) as attach_sidecars,
         ):
-            result = operations.op_attach_arxiv_sidecars(
+            result = intake_ops.op_attach_arxiv_sidecars(
                 "ABC12345", "https://arxiv.org/abs/2401.01234v2"
             )
 
@@ -413,11 +413,11 @@ class ZoteroArxivTest(unittest.TestCase):
 
     def test_attach_arxiv_sidecars_reports_invalid_id_cleanly(self):
         with (
-            mock.patch.object(operations, "ensure_local_api", return_value=None),
-            mock.patch.object(operations, "db_get_item") as db_get_item,
+            mock.patch.object(intake_ops, "ensure_local_api", return_value=None),
+            mock.patch.object(intake_ops, "db_get_item") as db_get_item,
         ):
             with self.assertRaisesRegex(RuntimeError, "Invalid arXiv ID"):
-                operations.op_attach_arxiv_sidecars("ABC12345", "not-an-arxiv-id")
+                intake_ops.op_attach_arxiv_sidecars("ABC12345", "not-an-arxiv-id")
 
         db_get_item.assert_not_called()
 
