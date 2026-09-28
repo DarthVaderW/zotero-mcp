@@ -29,7 +29,7 @@ from zotero_mcp.config import (
     LOCAL_LIBRARY_PREFIX,
 )
 from zotero_mcp.errors import CommandError
-from zotero_mcp.validators import require_item_type
+from zotero_mcp.validators import require_item_type, validate_id_type
 
 
 _WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -385,9 +385,7 @@ class LocalAPIClient:
     def erase_item(self, item_key: str) -> None:
         """Permanently erase an item. This is not exposed by the MCP server."""
         item, headers = self.get_json(f"{self.library_prefix}/items/{item_key}")
-        version = item.get("version") or item.get("data", {}).get("version") or headers.get("Last-Modified-Version")
-        if version is None:
-            raise CommandError(f"Could not determine current Zotero version for item {item_key}.")
+        version = self.item_version(item, headers)
         self.request(
             f"{self.library_prefix}/items/{item_key}",
             method="DELETE",
@@ -586,9 +584,7 @@ def _candidate_items(*queries: str) -> list[dict[str, Any]]:
 
 
 def db_find_item_by_identifier(identifier: str, id_type: str = "doi", title: str | None = None) -> list[dict[str, Any]]:
-    normalized_type = str(id_type or "doi").lower().strip()
-    if normalized_type not in {"doi", "isbn", "pmid"}:
-        raise RuntimeError("id_type must be one of: doi, isbn, pmid")
+    normalized_type = validate_id_type(id_type or "doi")
     target = str(identifier or "").strip()
     target_title = re.sub(r"\W+", " ", str(title or "").lower()).strip()
     target_doi = target.lower().rstrip("/")

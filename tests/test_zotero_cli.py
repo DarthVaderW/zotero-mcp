@@ -159,6 +159,9 @@ class ZoteroCLITest(unittest.TestCase):
         )
 
     def test_validators(self):
+        self.assertEqual(self.validators.validate_id_type(" DOI "), "doi")
+        with self.assertRaisesRegex(ValueError, "id_type"):
+            self.validators.validate_id_type("unknown")
         self.assertTrue(self.validators.validate_doi("10.1000/abc"))
         self.assertFalse(self.validators.validate_doi("not-a-doi"))
         self.assertTrue(self.validators.validate_item_key("A1B2C3D4"))
@@ -201,6 +204,17 @@ class ZoteroCLITest(unittest.TestCase):
     def test_create_item_requires_item_type(self):
         with self.assertRaisesRegex(RuntimeError, "itemType is required"):
             self.mod.create_item({"title": "Missing type"})
+
+    def test_cli_reports_value_error_without_traceback(self):
+        stderr = io.StringIO()
+        with mock.patch.object(sys, "argv", ["zotero-mcp", "ping"]), \
+                mock.patch.object(self.cli, "dispatch", side_effect=ValueError("invalid input")), \
+                contextlib.redirect_stderr(stderr):
+            with self.assertRaises(SystemExit) as exit_info:
+                self.cli.main()
+        self.assertEqual(exit_info.exception.code, 1)
+        self.assertIn("invalid input", stderr.getvalue())
+        self.assertNotIn("Traceback", stderr.getvalue())
 
 
 if __name__ == "__main__":

@@ -1030,6 +1030,12 @@ class ZoteroServerOperationsTest(unittest.TestCase):
         )
         self.assertEqual(result["status"], "updated")
 
+    def test_identifier_tool_normalizes_type_before_operation(self):
+        with mock.patch.object(server, "op_import_identifier", return_value={"ok": True}) as operation:
+            result = server.zotero_import_by_identifier("10.1000/test", id_type=" DOI ")
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(operation.call_args.kwargs["id_type"], "doi")
+
     def test_check_pdfs_reads_only_local_library(self):
         client = mock.Mock()
         client.library_prefix = "/users/0"
