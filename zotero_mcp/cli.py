@@ -18,23 +18,14 @@ from zotero_mcp.doi_ops import op_crossref, op_find_dois
 from zotero_mcp.library_ops import op_check_pdfs, op_export, op_update_item
 from zotero_mcp.local_api import ensure_local_api
 from zotero_mcp.local_library import db_get_item
+from zotero_mcp.basic_ops import (
+    op_attach_pdf, op_attach_snapshot, op_attachment_text, op_children,
+    op_collections, op_create_item, op_delete_items, op_get, op_items,
+    op_ping, op_search, op_tags,
+)
 from zotero_mcp.operations import (
-    op_attach_arxiv_sidecars,
-    op_attach_pdf,
-    op_attach_snapshot,
-    op_attachment_text,
-    op_capture_arxiv,
-    op_children,
-    op_collections,
-    op_create_item,
-    op_delete_items,
-    op_get,
-    op_import_identifier,
-    op_items,
-    op_ping,
-    op_search,
+    op_attach_arxiv_sidecars, op_capture_arxiv, op_import_identifier,
     op_search_arxiv,
-    op_tags,
 )
 
 _json_mode = False
