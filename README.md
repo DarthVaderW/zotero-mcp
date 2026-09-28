@@ -110,7 +110,12 @@ test creates, reads, updates, and then moves its temporary item to Zotero trash.
 - `zotero_mcp/library_ops.py`: update, export, DOI patch, and PDF coverage
   workflows.
 - `zotero_mcp/basic_ops.py`: direct library, attachment-text, and delete operations shared by MCP and CLI.
-- `zotero_mcp/intake_ops.py`: identifier and arXiv intake, including local PDF discovery and duplicate handling. Helpers called across modules use plain names; a leading underscore marks a helper private to its module.
+- `zotero_mcp/intake_ops.py`: identifier and arXiv intake, including local PDF
+  discovery and duplicate handling.
 - `zotero_mcp/arxiv_metadata.py`: arXiv search and external metadata retrieval; `arxiv.py` imports papers and attaches PDF/HTML sidecars through the Local API.
 - `zotero_mcp/server.py`: MCP tools and annotations.
 - `zotero_mcp/identifiers.py`, `pdf_discovery.py`: identifier metadata and open-access discovery.
+
+Helpers called across modules use plain names; a leading underscore marks a
+helper private to its module. These internal Python names are independent of
+the public MCP and CLI interfaces.
