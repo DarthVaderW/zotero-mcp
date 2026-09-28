@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from zotero_mcp.errors import CommandError
-from zotero_mcp.local_api import get_local_client
+from zotero_mcp.local_api import LocalAPIClient, get_local_client
 from zotero_mcp.validators import require_item_key
 
 
@@ -21,13 +21,7 @@ def _patch_item_field(item_key: str, field: str, value, version: int | str) -> N
     """Patch one field using the caller's already-read object version."""
     require_item_key(item_key)
     client = get_local_client()
-    client.request(
-        f"{client.library_prefix}/items/{item_key}",
-        method="PATCH",
-        data={field: value},
-        content_type="application/json",
-        headers={"If-Unmodified-Since-Version": str(version)},
-    )
+    client.patch_item(item_key, {field: value}, version=version)
 
 
 def op_update_item(
@@ -44,15 +38,7 @@ def op_update_item(
     client = get_local_client()
     item, headers = client.get_json(f"{client.library_prefix}/items/{key}")
     data = item.get("data", {})
-    version = (
-        item.get("version")
-        or data.get("version")
-        or _header(headers, "Last-Modified-Version")
-    )
-    if version in (None, ""):
-        raise CommandError(
-            f"Could not determine current Zotero version for item {key}."
-        )
+    version = LocalAPIClient.item_version(item, headers)
 
     changes = {}
     if title:
@@ -94,13 +80,7 @@ def op_update_item(
     if not changes:
         return {"status": "no_changes", "key": key, "changes": {}}
 
-    client.request(
-        f"{client.library_prefix}/items/{key}",
-        method="PATCH",
-        data=changes,
-        content_type="application/json",
-        headers={"If-Unmodified-Since-Version": str(version)},
-    )
+    client.patch_item(key, changes, version=version)
     return {"status": "updated", "key": key, "changes": changes}
 
 

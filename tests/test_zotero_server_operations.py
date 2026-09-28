@@ -1019,16 +1019,14 @@ class ZoteroServerOperationsTest(unittest.TestCase):
                 add_collection="COLL1234",
             )
 
-        client.request.assert_called_once_with(
-            "/users/0/items/ABC12345",
-            method="PATCH",
-            data={
+        client.patch_item.assert_called_once_with(
+            "ABC12345",
+            {
                 "title": "New title",
                 "tags": [{"tag": "new"}],
                 "collections": ["COLL1234"],
             },
-            content_type="application/json",
-            headers={"If-Unmodified-Since-Version": "7"},
+            version=7,
         )
         self.assertEqual(result["status"], "updated")
 

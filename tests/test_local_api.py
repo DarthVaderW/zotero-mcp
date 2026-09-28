@@ -137,6 +137,36 @@ class ZoteroLocalAPITest(unittest.TestCase):
             client.delete_item("ABC12345")
         patch_item.assert_called_once_with("ABC12345", {"deleted": True})
 
+    def test_collection_update_uses_version_of_original_read(self):
+        client = local_api.LocalAPIClient()
+        with (
+            mock.patch.object(local_api, "get_local_client", return_value=client),
+            mock.patch.object(client, "get_json", side_effect=[
+                ({"data": {"key": "TARGET01", "name": "Target"}}, {}),
+                ({"version": 1, "data": {"collections": ["BEFORE01"]}}, {}),
+            ]) as reads,
+            mock.patch.object(client, "request", side_effect=CommandError("conflict", 412)) as write,
+        ):
+            with self.assertRaises(CommandError) as error:
+                local_api.db_add_item_to_collection("ITEM0001", "TARGET01")
+        self.assertEqual(error.exception.code, 412)
+        self.assertEqual(reads.call_count, 2)
+        self.assertEqual(write.call_args.kwargs["headers"],
+                         {"If-Unmodified-Since-Version": "1"})
+        self.assertEqual(write.call_args.kwargs["data"]["collections"],
+                         ["BEFORE01", "TARGET01"])
+
+    def test_patch_item_without_supplied_version_keeps_legacy_call(self):
+        client = local_api.LocalAPIClient()
+        with (
+            mock.patch.object(client, "get_json", return_value=({"version": 4}, {})) as read,
+            mock.patch.object(client, "request", return_value=(b"", {}, 204)) as write,
+        ):
+            client.patch_item("ITEM0001", {"deleted": True})
+        read.assert_called_once()
+        self.assertEqual(write.call_args.kwargs["headers"],
+                         {"If-Unmodified-Since-Version": "4"})
+
     def test_get_all_json_paginates_and_honors_max_items(self):
         client = local_api.LocalAPIClient()
         first_page = [{"key": f"ITEM{i:04d}"} for i in range(100)]

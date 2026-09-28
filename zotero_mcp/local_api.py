@@ -350,10 +350,25 @@ class LocalAPIClient:
             return str(value.get("key") or value.get("data", {}).get("key") or "")
         return ""
 
-    def patch_item(self, item_key: str, changes: dict[str, Any]) -> None:
-        item, headers = self.get_json(f"{self.library_prefix}/items/{item_key}")
-        version = item.get("version") or item.get("data", {}).get("version") or headers.get("Last-Modified-Version")
+    @staticmethod
+    def item_version(item: dict[str, Any], headers: dict[str, str]) -> int | str:
+        version = item.get("version")
+        if version in (None, ""):
+            version = item.get("data", {}).get("version")
+        if version in (None, ""):
+            version = next((value for key, value in headers.items()
+                            if key.lower() == "last-modified-version"), None)
+        if version in (None, ""):
+            raise CommandError("Could not determine current Zotero item version.")
+        return version
+
+    def patch_item(
+        self, item_key: str, changes: dict[str, Any], *, version: int | str | None = None,
+    ) -> None:
         if version is None:
+            item, headers = self.get_json(f"{self.library_prefix}/items/{item_key}")
+            version = self.item_version(item, headers)
+        if version in (None, ""):
             raise CommandError(f"Could not determine current Zotero version for item {item_key}.")
         self.request(
             f"{self.library_prefix}/items/{item_key}",
@@ -808,11 +823,12 @@ def db_add_item_to_collection(item_key: str, collection_name_or_key: str) -> dic
             raise RuntimeError(f"Failed to create collection: {target}")
         collection = {"key": key, "name": target}
     collection_key = str(collection.get("key", ""))
-    raw_item, _ = client.get_json(f"{client.library_prefix}/items/{item_key}")
+    raw_item, headers = client.get_json(f"{client.library_prefix}/items/{item_key}")
     current = list(_data(raw_item).get("collections", []))
     if collection_key not in current:
         current.append(collection_key)
-        client.patch_item(item_key, {"collections": current})
+        client.patch_item(item_key, {"collections": current},
+                          version=client.item_version(raw_item, headers))
     return {"itemKey": item_key, "collectionKey": collection_key, "collectionName": collection.get("name", target)}
 
 
