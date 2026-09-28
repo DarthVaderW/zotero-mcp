@@ -5,7 +5,7 @@ Zotero MCP is a local STDIO server for Zotero 10+'s official Local API.
 ## Add the server
 
 ```powershell
-codex mcp add zotero -- uvx --from git+https://github.com/DarthVaderW/zotero-mcp.git@v0.4.0 zotero-mcp
+codex mcp add zotero -- uvx --from git+https://github.com/DarthVaderW/zotero-mcp.git@stable zotero-mcp
 ```
 
 Equivalent `config.toml`:
@@ -15,7 +15,7 @@ Equivalent `config.toml`:
 command = "uvx"
 args = [
   "--from",
-  "git+https://github.com/DarthVaderW/zotero-mcp.git@v0.4.0",
+  "git+https://github.com/DarthVaderW/zotero-mcp.git@stable",
   "zotero-mcp",
 ]
 default_tools_approval_mode = "writes"

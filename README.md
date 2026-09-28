@@ -32,7 +32,7 @@ forward or publicly expose port 23119.
 ## Install in Codex
 
 ```powershell
-codex mcp add zotero -- uvx --from git+https://github.com/DarthVaderW/zotero-mcp.git@v0.4.0 zotero-mcp
+codex mcp add zotero -- uvx --from git+https://github.com/DarthVaderW/zotero-mcp.git@stable zotero-mcp
 ```
 
 No Zotero credential belongs in the Codex MCP entry. On the first write,
