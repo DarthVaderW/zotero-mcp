@@ -10,7 +10,7 @@ import unittest
 from unittest import mock
 
 from zotero_mcp.errors import CommandError
-from zotero_mcp import local_api
+from zotero_mcp import local_api, local_library
 
 
 class ZoteroLocalAPITest(unittest.TestCase):
@@ -131,6 +131,28 @@ class ZoteroLocalAPITest(unittest.TestCase):
         upload.assert_called_once()
         self.assertEqual(upload.call_args.kwargs["data"], b"hello")
 
+    def test_attach_pdf_uses_file_bytes_and_surfaces_upload_error(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "paper.pdf"
+            path.write_bytes(b"%PDF-test")
+            client = local_api.LocalAPIClient()
+            with (
+                mock.patch.object(local_library, "get_local_client", return_value=client),
+                mock.patch.object(client, "create_attachment", return_value="ATT12345") as upload,
+            ):
+                self.assertEqual(local_library.attach_pdf_from_file("PARENT12", str(path)), "ATT12345")
+                self.assertEqual(upload.call_args.kwargs["data"], b"%PDF-test")
+                self.assertEqual(upload.call_args.kwargs["content_type"], "application/pdf")
+                self.assertEqual(upload.call_args.args[0], "PARENT12")
+            with (
+                mock.patch.object(local_library, "get_local_client", return_value=client),
+                mock.patch.object(client, "create_attachment", side_effect=CommandError("upload denied", 403)),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "upload denied"):
+                    local_library.attach_pdf_from_file("PARENT12", str(path))
+        with self.assertRaisesRegex(RuntimeError, "File not found:"):
+            local_library.attach_pdf_from_file("PARENT12", str(path))
+
     def test_delete_item_is_recoverable_trash_patch(self):
         client = local_api.LocalAPIClient()
         with mock.patch.object(client, "patch_item") as patch_item:
@@ -140,7 +162,7 @@ class ZoteroLocalAPITest(unittest.TestCase):
     def test_collection_update_uses_version_of_original_read(self):
         client = local_api.LocalAPIClient()
         with (
-            mock.patch.object(local_api, "get_local_client", return_value=client),
+            mock.patch.object(local_library, "get_local_client", return_value=client),
             mock.patch.object(client, "get_json", side_effect=[
                 ({"data": {"key": "TARGET01", "name": "Target"}}, {}),
                 ({"version": 1, "data": {"collections": ["BEFORE01"]}}, {}),
@@ -148,7 +170,7 @@ class ZoteroLocalAPITest(unittest.TestCase):
             mock.patch.object(client, "request", side_effect=CommandError("conflict", 412)) as write,
         ):
             with self.assertRaises(CommandError) as error:
-                local_api.db_add_item_to_collection("ITEM0001", "TARGET01")
+                local_library.db_add_item_to_collection("ITEM0001", "TARGET01")
         self.assertEqual(error.exception.code, 412)
         self.assertEqual(reads.call_count, 2)
         self.assertEqual(write.call_args.kwargs["headers"],

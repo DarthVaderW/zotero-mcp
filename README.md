@@ -6,6 +6,10 @@ The server reads and writes through Zotero's official Local API at
 `http://127.0.0.1:23119/api`. It does not connect to a remote Zotero library
 backend and does not require Zotero account credentials in Codex.
 
+Library access uses the official Local API exclusively; there is no Zotero
+Web API or Debug Bridge fallback. DOI/Crossref/arXiv lookups and PDF or HTML
+downloads still contact their external sources, then save through the Local API.
+
 ## Capabilities
 
 - Search and inspect items, collections, tags, children, attachments, and
@@ -99,8 +103,10 @@ test creates, reads, updates, and then moves its temporary item to Zotero trash.
 
 ## Source layout
 
-- `zotero_mcp/local_api.py`: transport, authorization, versioned writes,
-  uploads, attachment paths, and trash operations.
+- `zotero_mcp/local_api.py`: official Local API HTTP client, per-instance
+  authorization, versioned writes, and upload protocol.
+- `zotero_mcp/local_library.py`: item, collection, attachment and trash
+  helpers over that client, including payload normalization.
 - `zotero_mcp/library_ops.py`: update, export, DOI patch, and PDF coverage
   workflows.
 - `zotero_mcp/operations.py`: workflows shared by MCP and CLI.

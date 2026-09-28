@@ -20,7 +20,10 @@ from zotero_mcp.identifiers import (
     _translate_identifier,
     clean_translated_item_for_local,
 )
-from zotero_mcp.local_api import (
+from zotero_mcp.local_api import ensure_local_api
+from zotero_mcp.local_library import (
+    attach_pdf_from_file,
+    create_item,
     db_add_item_to_collection,
     db_add_snapshot,
     db_delete_item,
@@ -33,9 +36,7 @@ from zotero_mcp.local_api import (
     db_get_items,
     db_get_tags,
     db_search,
-    ensure_local_api,
 )
-from zotero_mcp.local_ops import attach_pdf_from_file, create_item
 from zotero_mcp.pdf_discovery import _find_pdf_source
 from zotero_mcp.pdfs import _download_pdf
 from zotero_mcp.validators import require_item_key, validate_id_type

@@ -26,7 +26,7 @@ class ZoteroCLITest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.mod = load_module("zotero_mcp.operations")
-        cls.local_ops = load_module("zotero_mcp.local_ops")
+        cls.local_library = load_module("zotero_mcp.local_library")
         cls.validators = load_module("zotero_mcp.validators")
         cls.cli = load_module("zotero_mcp.cli")
 
@@ -170,15 +170,9 @@ class ZoteroCLITest(unittest.TestCase):
         self.assertFalse(self.validators.validate_isbn("abc"))
 
     def test_create_item_preserves_zotero_fields(self):
-        captured = {}
-        original = self.local_ops.db_create_item
-
-        def fake_create_item(payload):
-            captured.update(payload)
-            return {"success": True, "key": "ABC12345"}
-
-        self.local_ops.db_create_item = fake_create_item
-        try:
+        client = load_module("zotero_mcp.local_api").LocalAPIClient()
+        with mock.patch.object(client, "create_objects", return_value={"successful": {"0": {"key": "ABC12345"}}}) as create, \
+                mock.patch.object(self.local_library, "get_local_client", return_value=client):
             key = self.mod.create_item(
                 {
                     "itemType": "book",
@@ -189,10 +183,9 @@ class ZoteroCLITest(unittest.TestCase):
                     "extra_fields": {"volume": "42"},
                 }
             )
-        finally:
-            self.local_ops.db_create_item = original
-
+        captured = create.call_args.args[1][0]
         self.assertEqual(key, "ABC12345")
+        self.assertEqual(create.call_args.args[0], f"{client.library_prefix}/items")
         self.assertEqual(captured["itemType"], "book")
         self.assertEqual(captured["title"], "Payload test")
         self.assertEqual(captured["abstractNote"], "Alias abstract")

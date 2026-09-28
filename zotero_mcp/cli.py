@@ -16,7 +16,8 @@ import sys
 
 from zotero_mcp.doi_ops import op_crossref, op_find_dois
 from zotero_mcp.library_ops import op_check_pdfs, op_export, op_update_item
-from zotero_mcp.local_api import db_get_item, ensure_local_api
+from zotero_mcp.local_api import ensure_local_api
+from zotero_mcp.local_library import db_get_item
 from zotero_mcp.operations import (
     op_attach_arxiv_sidecars,
     op_attach_pdf,
