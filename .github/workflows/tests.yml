@@ -1,0 +1,19 @@
+name: tests
+on: [push, pull_request]
+jobs:
+  mcp:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ['3.10', '3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@v5
+      - run: uv lock --check
+      - run: uv sync --locked
+      - run: uv run --no-sync python -m unittest discover -s tests -p test_*.py -v
+      - run: uv run --no-sync python tests/smoke_test_mcp.py --expect-tool zotero_ping --expect-tool zotero_update_item

@@ -13,6 +13,8 @@ backend and does not require Zotero account credentials in Codex.
 - Import DOI, ISBN, PMID, and arXiv records with duplicate checks.
 - Discover open-access PDFs during identifier import and attach local files.
 - Create and update items with object-version preconditions.
+- Collection changes use the version of the item that supplied the original
+  collection list. Concurrent changes return HTTP 412; re-read before retrying.
 - Export BibTeX, RIS, and CSL JSON; report missing PDFs; find missing DOIs.
 - Store one downloaded HTML document as an attachment.
 - Move items to Zotero trash. Permanent deletion is not exposed through MCP.
